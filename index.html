@@ -7,21 +7,21 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Unbounded:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --clay: #1a1a2e;
-    --clay-light: #16213e;
-    --clay-mid: #0f3460;
-    --accent: #e94560;
+    --clay: #eef5f0;
+    --clay-light: #e4f0e8;
+    --clay-mid: #d4e8da;
+    --accent: #2d7a4f;
     --accent2: #f5a623;
-    --teal: #00b4d8;
-    --surface: #1e2a3a;
-    --surface2: #243447;
-    --border: rgba(255,255,255,0.08);
-    --border-accent: rgba(233,69,96,0.4);
-    --text: #f0f4f8;
-    --text-muted: #8a9bb0;
-    --text-dim: #5a6a7a;
-    --success: #00c896;
-    --warning: #f5a623;
+    --teal: #1a6b5a;
+    --surface: #ffffff;
+    --surface2: #f2f9f4;
+    --border: rgba(45,122,79,0.13);
+    --border-accent: rgba(45,122,79,0.35);
+    --text: #1a2e22;
+    --text-muted: #4a6b56;
+    --text-dim: #7a9e87;
+    --success: #1e8c5a;
+    --warning: #c47a15;
     --radius: 12px;
     --radius-sm: 8px;
   }
@@ -42,8 +42,8 @@
     position: fixed;
     inset: 0;
     background-image:
-      linear-gradient(rgba(233,69,96,0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(233,69,96,0.04) 1px, transparent 1px);
+      linear-gradient(rgba(45,122,79,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45,122,79,0.07) 1px, transparent 1px);
     background-size: 48px 48px;
     pointer-events: none;
     z-index: 0;
@@ -92,6 +92,7 @@
     width: min(400px, 90vw);
     position: relative;
     overflow: hidden;
+    box-shadow: 0 8px 40px rgba(45,122,79,0.12);
   }
 
   .login-card::before {
@@ -99,7 +100,7 @@
     position: absolute;
     top: -60px; right: -60px;
     width: 160px; height: 160px;
-    background: radial-gradient(circle, rgba(233,69,96,0.15) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(45,122,79,0.12) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -114,7 +115,7 @@
 
   .login-input {
     width: 100%;
-    background: var(--clay-mid);
+    background: var(--clay-light);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 14px 18px;
@@ -181,7 +182,7 @@
   /* ── HEADER ── */
   .header {
     position: sticky; top: 0; z-index: 100;
-    background: rgba(26,26,46,0.92);
+    background: rgba(238,245,240,0.93);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
     padding: 0 24px;
@@ -200,7 +201,7 @@
     width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 0 8px var(--accent);
+    box-shadow: 0 0 8px rgba(45,122,79,0.5);
   }
 
   .header-right { display: flex; align-items: center; gap: 16px; }
@@ -313,8 +314,9 @@
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 2px;
+    height: 3px;
     background: var(--accent);
+    border-radius: 2px 2px 0 0;
   }
 
   .stat-card.teal::after { background: var(--teal); }
@@ -344,6 +346,7 @@
     border-radius: var(--radius);
     overflow: hidden;
     margin-bottom: 24px;
+    box-shadow: 0 1px 6px rgba(45,122,79,0.08);
   }
 
   .table-header {
@@ -385,9 +388,9 @@
     font-size: 11px; font-weight: 500;
   }
 
-  .pill-win { background: rgba(0,200,150,0.15); color: var(--success); }
-  .pill-loss { background: rgba(233,69,96,0.15); color: var(--accent); }
-  .pill-player { background: rgba(0,180,216,0.12); color: var(--teal); }
+  .pill-win { background: rgba(30,140,90,0.15); color: var(--success); }
+  .pill-loss { background: rgba(180,60,60,0.15); color: #b03030; }
+  .pill-player { background: rgba(45,122,79,0.12); color: var(--accent); }
 
   /* ── FORM ELEMENTS ── */
   .form-card {
@@ -396,6 +399,7 @@
     border-radius: var(--radius);
     padding: 28px;
     margin-bottom: 24px;
+    box-shadow: 0 1px 6px rgba(45,122,79,0.08);
   }
 
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -413,7 +417,7 @@
   }
 
   .form-input, .form-select, .form-textarea {
-    background: var(--clay-mid);
+    background: var(--clay-light);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 11px 14px;
@@ -477,7 +481,7 @@
 
   /* ── SESSION LOG ── */
   .session-item {
-    background: var(--clay-light);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 20px;
@@ -485,7 +489,7 @@
     transition: border-color 0.2s;
   }
 
-  .session-item:hover { border-color: rgba(233,69,96,0.3); }
+  .session-item:hover { border-color: rgba(45,122,79,0.4); }
 
   .session-meta {
     display: flex; align-items: center; gap: 12px;
@@ -508,7 +512,7 @@
   .session-matches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
   .match-chip {
-    background: var(--surface2);
+    background: var(--clay-light);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 6px 12px;
@@ -524,7 +528,7 @@
     font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
-    border-left: 2px solid var(--accent);
+    border-left: 3px solid var(--accent);
     padding-left: 12px;
   }
 
@@ -560,7 +564,7 @@
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--teal), var(--accent));
+    background: linear-gradient(90deg, var(--accent), var(--teal));
   }
 
   .combo-pair {
@@ -570,11 +574,11 @@
 
   .player-pill {
     padding: 5px 12px;
-    background: rgba(0,180,216,0.1);
-    border: 1px solid rgba(0,180,216,0.2);
+    background: rgba(45,122,79,0.1);
+    border: 1px solid rgba(45,122,79,0.2);
     border-radius: 100px;
     font-size: 12px;
-    color: var(--teal);
+    color: var(--accent);
     font-weight: 500;
   }
 
@@ -607,6 +611,7 @@
     border-radius: var(--radius);
     padding: 20px;
     display: flex; align-items: center; gap: 20px;
+    box-shadow: 0 1px 4px rgba(45,122,79,0.07);
   }
 
   .line-number {
@@ -642,8 +647,8 @@
     letter-spacing: 0.08em;
   }
 
-  .tag-singles { background: rgba(233,69,96,0.12); color: var(--accent); }
-  .tag-doubles { background: rgba(0,180,216,0.12); color: var(--teal); }
+  .tag-singles { background: rgba(45,122,79,0.12); color: var(--accent); }
+  .tag-doubles { background: rgba(26,107,90,0.12); color: var(--teal); }
 
   /* ── ALERT / TOAST ── */
   .toast {
@@ -661,7 +666,7 @@
   }
 
   .toast.show { transform: translateY(0); opacity: 1; }
-  .toast.error { background: var(--accent); }
+  .toast.error { background: #c0392b; }
 
   /* ── EMPTY STATE ── */
   .empty-state {
@@ -702,8 +707,8 @@
     <div class="login-error" id="login-error">Incorrect code. Try again.</div>
 
     <div class="login-badge">
-      <div class="badge"><div class="badge-dot"></div>Elan Braverman · Captain</div>
-      <div class="badge"><div class="badge-dot" style="background:var(--teal)"></div>Rohith Chinnasamy · Analyst</div>
+      <div class="badge"><div class="badge-dot"></div>Elan Vasudevan · Captain</div>
+      <div class="badge"><div class="badge-dot" style="background:var(--teal)"></div>Rohith Chinnaswamy · Analyst</div>
     </div>
   </div>
 </div>
@@ -828,7 +833,7 @@
 
       <div id="line-editor" style="display:none;margin-top:24px">
         <div class="form-card">
-          <div style="font-family:'Unbounded',sans-serif;font-size:13px;margin-bottom:20px;color:var(--teal)">Edit Line Assignments</div>
+          <div style="font-family:'Unbounded',sans-serif;font-size:13px;margin-bottom:20px;color:var(--accent)">Edit Line Assignments</div>
           <div id="line-editor-fields"></div>
           <div class="btn-row">
             <button class="btn-primary" onclick="saveLines()">Save Lines →</button>
@@ -1247,10 +1252,12 @@ function renderPracticeLog() {
     const matchesHtml = s.matches && s.matches.length
       ? `<div class="session-matches">${s.matches.map(m => `
           <div class="match-chip">
-            <span>${m.p1}</span>
+            ${m.label ? `<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:${m.type==='doubles'?'rgba(0,180,216,0.12)':'rgba(233,69,96,0.12)'};color:${m.type==='doubles'?'var(--teal)':'var(--accent)'}">${m.label}</span>` : ''}
+            <span style="font-weight:500">${m.p1}</span>
+            <span style="color:var(--text-dim);font-size:11px">vs</span>
+            <span style="font-weight:500">${m.p2}</span>
             <span class="score ${m.result==='loss'?'loss':''}">${m.score}</span>
-            <span>vs</span>
-            <span>${m.p2}</span>
+            <span style="font-size:11px;color:${m.result==='loss'?'var(--accent)':'var(--success)'}">${m.result==='win'?'W':'L'}</span>
           </div>`).join('')}</div>`
       : `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No match scores recorded</div>`;
 
@@ -1259,7 +1266,7 @@ function renderPracticeLog() {
     let weatherHtml = '';
     if (s.weather) {
       const wx = s.weather;
-      weatherHtml = `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:rgba(0,180,216,0.07);border:1px solid rgba(0,180,216,0.15);border-radius:8px;flex-wrap:wrap;">
+      weatherHtml = `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:rgba(45,122,79,0.07);border:1px solid rgba(45,122,79,0.15);border-radius:8px;flex-wrap:wrap;">
         <span style="font-size:18px">${wxIcon(wx.code)}</span>
         <span style="font-size:13px;font-weight:500;color:var(--text)">${wx.temp}°F</span>
         <span style="font-size:12px;color:var(--text-muted)">feels ${wx.feels}°F</span>
@@ -1296,44 +1303,124 @@ function renderPracticeLog() {
 // ══════════════════════════════════════
 let matchEntryCount = 0;
 
-function rosterOpts(includeBlank) {
-  let html = includeBlank ? '<option value="">— Select player —</option>' : '';
-  html += ROSTER.map(p => `<option value="${p.name}">${p.name} (${p.ntrp.toFixed(1)})</option>`).join('');
-  return html;
+// Build player picker HTML: dropdown from roster + optional free-text override
+function playerPickerHtml(idPrefix, label) {
+  const opts = ROSTER.map(p =>
+    `<option value="${p.name}">${p.name} (${p.ntrp.toFixed(1)})</option>`
+  ).join('');
+  return `
+    <div class="form-group">
+      <label class="form-label">${label}</label>
+      <select class="form-select player-pick" id="${idPrefix}-sel" style="margin-bottom:6px"
+        onchange="toggleCustomInput('${idPrefix}')">
+        <option value="">— From roster —</option>
+        ${opts}
+        <option value="__other__">Other (not on roster)</option>
+      </select>
+      <input class="form-input player-custom" id="${idPrefix}-txt"
+        placeholder="Enter opponent name…"
+        style="margin-bottom:0;display:none" />
+    </div>`;
+}
+
+function toggleCustomInput(idPrefix) {
+  const sel = document.getElementById(idPrefix + '-sel');
+  const txt = document.getElementById(idPrefix + '-txt');
+  txt.style.display = sel.value === '__other__' ? 'block' : 'none';
+  if (sel.value !== '__other__') txt.value = '';
+}
+
+function getPlayerVal(idPrefix) {
+  const sel = document.getElementById(idPrefix + '-sel');
+  const txt = document.getElementById(idPrefix + '-txt');
+  if (sel.value === '__other__') return txt.value.trim() || 'Unknown';
+  return sel.value || '—';
 }
 
 function addMatchEntry() {
   matchEntryCount++;
+  const id = matchEntryCount;
   const div = document.createElement('div');
-  div.style.cssText = 'background:var(--clay-mid);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative';
-  div.id = `match-entry-${matchEntryCount}`;
+  div.style.cssText = 'background:var(--clay-light);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;position:relative';
+  div.id = `match-entry-${id}`;
   div.innerHTML = `
     <button onclick="this.closest('[id^=match-entry]').remove()"
       style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px">✕</button>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div class="form-group">
-        <label class="form-label">Player 1 / Team A</label>
-        <select class="form-select" style="margin-bottom:0">${rosterOpts(true)}</select>
+
+    <!-- Match type row -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)">Type</span>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="type-btn active" id="type-s-${id}"
+          onclick="setMatchType(${id},'singles')"
+          style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer;font-family:'DM Sans',sans-serif">
+          Singles
+        </button>
+        <button type="button" class="type-btn" id="type-d-${id}"
+          onclick="setMatchType(${id},'doubles')"
+          style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:'DM Sans',sans-serif">
+          Doubles
+        </button>
       </div>
-      <div class="form-group">
-        <label class="form-label">Player 2 / Team B</label>
-        <select class="form-select" style="margin-bottom:0">${rosterOpts(true)}</select>
+      <input type="hidden" id="match-type-${id}" value="singles" />
+    </div>
+
+    <!-- Singles section -->
+    <div id="singles-section-${id}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        ${playerPickerHtml(`s1-${id}`, 'Our Player')}
+        ${playerPickerHtml(`s2-${id}`, 'Opponent')}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+
+    <!-- Doubles section (hidden by default) -->
+    <div id="doubles-section-${id}" style="display:none">
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:8px">Our Team</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        ${playerPickerHtml(`d1a-${id}`, 'Player A')}
+        ${playerPickerHtml(`d1b-${id}`, 'Player B')}
+      </div>
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Opponents</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        ${playerPickerHtml(`d2a-${id}`, 'Player A')}
+        ${playerPickerHtml(`d2b-${id}`, 'Player B')}
+      </div>
+    </div>
+
+    <!-- Score + result -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
       <div class="form-group">
         <label class="form-label">Score (e.g. 6-3, 6-4)</label>
-        <input class="form-input" placeholder="6-3, 6-4" style="margin-bottom:0" />
+        <input class="form-input match-score" placeholder="6-3, 6-4" style="margin-bottom:0" />
       </div>
       <div class="form-group">
-        <label class="form-label">Result for Player 1</label>
-        <select class="form-select" style="margin-bottom:0">
-          <option value="win">Win</option>
-          <option value="loss">Loss</option>
+        <label class="form-label">Result (our side)</label>
+        <select class="form-select match-result" style="margin-bottom:0">
+          <option value="win">Win ✓</option>
+          <option value="loss">Loss ✗</option>
         </select>
       </div>
     </div>`;
   document.getElementById('match-entries').appendChild(div);
+}
+
+function setMatchType(id, type) {
+  document.getElementById(`match-type-${id}`).value = type;
+  const sBtn = document.getElementById(`type-s-${id}`);
+  const dBtn = document.getElementById(`type-d-${id}`);
+  const sSection = document.getElementById(`singles-section-${id}`);
+  const dSection = document.getElementById(`doubles-section-${id}`);
+  if (type === 'singles') {
+    sBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer;font-family:'DM Sans',sans-serif';
+    dBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:'DM Sans',sans-serif';
+    sSection.style.display = 'block';
+    dSection.style.display = 'none';
+  } else {
+    dBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--teal);background:rgba(0,180,216,0.15);color:var(--teal);cursor:pointer;font-family:'DM Sans',sans-serif';
+    sBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:'DM Sans',sans-serif';
+    sSection.style.display = 'none';
+    dSection.style.display = 'block';
+  }
 }
 
 // ══════════════════════════════════════
@@ -1403,7 +1490,7 @@ async function previewWeather() {
   if (!dateVal) return;
 
   clearTimeout(wxDebounce);
-  preview.innerHTML = `<span style="color:var(--teal);font-size:12px">⟳ Fetching Austin weather…</span>`;
+  preview.innerHTML = `<span style="color:var(--accent);font-size:12px">⟳ Fetching Austin weather…</span>`;
 
   wxDebounce = setTimeout(async () => {
     try {
@@ -1441,7 +1528,7 @@ async function saveSession() {
   let weather = null;
   try {
     const preview = document.getElementById('weather-preview');
-    preview.innerHTML = `<span style="color:var(--teal);font-size:12px">⟳ Saving weather data…</span>`;
+    preview.innerHTML = `<span style="color:var(--accent);font-size:12px">⟳ Saving weather data…</span>`;
     const hour = parseInt(timeVal.split(':')[0]);
     weather = cachedWeather || await fetchWeatherForDate(date, hour);
     cachedWeather = null;
@@ -1450,18 +1537,29 @@ async function saveSession() {
   const entries = document.querySelectorAll('[id^="match-entry-"]');
   const matches = [];
   entries.forEach(e => {
-    const sels = e.querySelectorAll('select');
-    const scoreInput = e.querySelector('input');
-    const p1 = sels[0] ? sels[0].value : '';
-    const p2 = sels[1] ? sels[1].value : '';
-    const result = sels[2] ? sels[2].value : 'win';
-    if (p1 || p2) {
-      matches.push({
-        p1: p1 || '—',
-        p2: p2 || '—',
-        score: scoreInput ? scoreInput.value || '—' : '—',
-        result
-      });
+    const entryId = e.id.replace('match-entry-', '');
+    const matchType = document.getElementById(`match-type-${entryId}`)?.value || 'singles';
+    const scoreInput = e.querySelector('.match-score');
+    const resultSel = e.querySelector('.match-result');
+    const score = scoreInput ? scoreInput.value.trim() || '—' : '—';
+    const result = resultSel ? resultSel.value : 'win';
+
+    let p1 = '', p2 = '', label = '';
+    if (matchType === 'singles') {
+      p1 = getPlayerVal(`s1-${entryId}`);
+      p2 = getPlayerVal(`s2-${entryId}`);
+      label = 'Singles';
+    } else {
+      const d1a = getPlayerVal(`d1a-${entryId}`);
+      const d1b = getPlayerVal(`d1b-${entryId}`);
+      const d2a = getPlayerVal(`d2a-${entryId}`);
+      const d2b = getPlayerVal(`d2b-${entryId}`);
+      p1 = [d1a, d1b].filter(x => x && x !== '—').join(' & ') || '—';
+      p2 = [d2a, d2b].filter(x => x && x !== '—').join(' & ') || '—';
+      label = 'Doubles';
+    }
+    if (p1 !== '—' || p2 !== '—') {
+      matches.push({ type: matchType, label, p1, p2, score, result });
     }
   });
 
