@@ -817,6 +817,7 @@
               <th>Player Name</th>
               <th>NTRP</th>
               <th>Role</th>
+              <th>Preference</th>
             </tr>
           </thead>
           <tbody id="roster-body"></tbody>
@@ -854,13 +855,12 @@
       <div class="section-header">
         <div>
           <div class="section-title">Doubles Combinations</div>
-          <div class="section-subtitle">Partnership stats from practice sessions</div>
+          <div class="section-subtitle">Partnership win/loss stats computed from practice sessions</div>
         </div>
+        <button class="btn-primary" onclick="refreshCombos()">&#8635; Refresh Combos</button>
       </div>
-
-      <div class="combo-grid" id="combo-container">
-        <!-- populated by JS -->
-      </div>
+      <div id="combos-status" style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:none"></div>
+      <div class="combo-grid" id="combo-container"></div>
     </div>
 
     <!-- ── PRACTICE LOG TAB ── -->
@@ -971,16 +971,11 @@ const ROSTER = [
 const DEFAULT_DATA = {
   matchHistory: [],
   playerLines: [
-    { type: 'singles', line: 1, player: 'Elan Vasudevan',       notes: 'Captain · 4.0 NTRP' },
-    { type: 'singles', line: 2, player: 'Rohith Chinnaswamy',   notes: 'Analyst · 4.0 NTRP' },
-    { type: 'singles', line: 3, player: 'Brad Jackson',         notes: '4.0 NTRP' },
-    { type: 'singles', line: 4, player: 'Jim Caldwell',         notes: '4.0 NTRP' },
-    { type: 'singles', line: 5, player: 'Samir Modi',           notes: '4.0 NTRP' },
-    { type: 'doubles', line: 1, player1: 'Elan Vasudevan',      player2: 'Rohith Chinnaswamy',        notes: '4.0 / 4.0' },
-    { type: 'doubles', line: 2, player1: 'Brad Jackson',        player2: 'Jim Caldwell',              notes: '4.0 / 4.0' },
-    { type: 'doubles', line: 3, player1: 'Samir Modi',          player2: 'Cade Thompson',             notes: '4.0 / 4.0' },
-    { type: 'doubles', line: 4, player1: 'Philip Bramson',      player2: 'Jose Martinez',             notes: '4.0 / 4.0' },
-    { type: 'doubles', line: 5, player1: 'Pavan Pawar',         player2: 'Gilbert Onyenwezi',         notes: '4.0 / 4.0' },
+    { type: 'singles', line: 1, player: 'Elan Vasudevan',      notes: 'Captain · 4.0 NTRP' },
+    { type: 'singles', line: 2, player: 'Rohith Chinnaswamy',  notes: 'Analyst · 4.0 NTRP' },
+    { type: 'doubles', line: 1, player1: 'Elan Vasudevan',     player2: 'Rohith Chinnaswamy', notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 2, player1: 'Brad Jackson',       player2: 'Jim Caldwell',       notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 3, player1: 'Samir Modi',         player2: 'Cade Thompson',      notes: '4.0 / 4.0' },
   ],
   doublesCombos: [],
   practiceSessions: []
@@ -1061,6 +1056,7 @@ function mergeDefaults(data) {
   if (!data.doublesCombos)    data.doublesCombos = [];
   if (!data.matchHistory)     data.matchHistory = [];
   if (!data.practiceSessions) data.practiceSessions = [];
+  if (!data.rosterPrefs)      data.rosterPrefs = {};
   return data;
 }
 
@@ -1204,16 +1200,143 @@ function renderScores() {
 // ══════════════════════════════════════
 // RENDER ROSTER
 // ══════════════════════════════════════
+function prefBadge(pref) {
+  const map = {
+    singles: { label: 'Singles', color: 'var(--accent)',  bg: 'rgba(233,69,96,0.12)' },
+    doubles: { label: 'Doubles', color: 'var(--teal)',    bg: 'rgba(0,180,216,0.12)' },
+    both:    { label: 'Both',    color: 'var(--success)', bg: 'rgba(0,200,150,0.12)' },
+  };
+  const s = map[pref] || map.both;
+  return '<span style="font-size:11px;padding:3px 10px;border-radius:100px;background:' + s.bg + ';color:' + s.color + ';border:1px solid ' + s.color + '33">' + s.label + '</span>';
+}
+
+async function saveRosterPref(playerName, pref) {
+  if (!appData.rosterPrefs) appData.rosterPrefs = {};
+  appData.rosterPrefs[playerName] = pref;
+  await persistData();
+  renderRoster();
+  showToast(playerName.split(' ')[0] + ': ' + pref + ' preference saved');
+}
+
+function getActiveLineupPlayers() {
+  // Returns Set of player names currently assigned to any line
+  const lines = (appData && appData.playerLines) || [];
+  const active = new Set();
+  lines.forEach(l => {
+    if (l.type === 'singles') {
+      if (l.player) active.add(l.player);
+    } else if (l.type === 'doubles') {
+      if (l.player1) active.add(l.player1);
+      if (l.player2) active.add(l.player2);
+    }
+  });
+  return active;
+}
+
 function renderRoster() {
   const roles = { 'Elan Vasudevan': 'Captain', 'Rohith Chinnaswamy': 'Analyst' };
   const ntrpColor = { 4.0: 'var(--teal)', 3.5: 'var(--warning)' };
-  document.getElementById('roster-body').innerHTML = ROSTER.map((p, i) => `
-    <tr>
-      <td style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim)">${String(i+1).padStart(2,'0')}</td>
-      <td style="font-weight:500">${p.name}</td>
-      <td><span style="font-family:var(--font-mono,monospace);font-size:13px;color:${ntrpColor[p.ntrp]||'var(--teal)'}">${p.ntrp.toFixed(1)}</span></td>
-      <td>${roles[p.name] ? `<span class="pill pill-player">${roles[p.name]}</span>` : '<span style="color:var(--text-dim);font-size:13px">Player</span>'}</td>
-    </tr>`).join('');
+  const savedPrefs = (appData && appData.rosterPrefs) || {};
+  const activePlayers = getActiveLineupPlayers();
+  const hasLineup = activePlayers.size > 0;
+
+  const tbody = document.getElementById('roster-body');
+  tbody.innerHTML = '';
+
+  // Sort: active players first, then reserves
+  const sorted = [...ROSTER].sort((a, b) => {
+    const aActive = activePlayers.has(a.name);
+    const bActive = activePlayers.has(b.name);
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
+    return 0;
+  });
+
+  sorted.forEach((p, i) => {
+    const pref = savedPrefs[p.name] || p.pref || 'both';
+    const isActive  = activePlayers.has(p.name);
+    const isReserve = hasLineup && !isActive;
+
+    const tr = document.createElement('tr');
+    // Roster shows all players equally — reserves shown in Player Lines tab
+
+    // # cell
+    const td1 = document.createElement('td');
+    td1.style.cssText = 'font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim)';
+    td1.textContent = String(i+1).padStart(2,'0');
+
+    // Name + reserve badge
+    const td2 = document.createElement('td');
+    td2.style.fontWeight = '500';
+    const nameWrap = document.createElement('div');
+    nameWrap.style.cssText = 'display:flex;align-items:center;gap:8px';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = p.name;
+    nameWrap.appendChild(nameSpan);
+    if (isReserve) {
+      const reserveBadge = document.createElement('span');
+      reserveBadge.textContent = 'Reserve';
+      reserveBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:100px;background:rgba(90,106,122,0.25);color:var(--text-dim);border:1px solid rgba(90,106,122,0.3);font-weight:400';
+      nameWrap.appendChild(reserveBadge);
+    } else if (hasLineup && isActive) {
+      // Show which line they're on
+      const lines = (appData.playerLines || []);
+      const lineLabels = [];
+      lines.forEach(l => {
+        if (l.type === 'singles' && l.player === p.name) lineLabels.push('S' + l.line);
+        if (l.type === 'doubles' && (l.player1 === p.name || l.player2 === p.name)) lineLabels.push('D' + l.line);
+      });
+      if (lineLabels.length) {
+        const lineBadge = document.createElement('span');
+        lineBadge.textContent = lineLabels.join(', ');
+        lineBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:100px;background:rgba(0,180,216,0.12);color:var(--teal);border:1px solid rgba(0,180,216,0.2);font-weight:400';
+        nameWrap.appendChild(lineBadge);
+      }
+    }
+    td2.appendChild(nameWrap);
+
+    // NTRP cell
+    const td3 = document.createElement('td');
+    const ntrpSpan = document.createElement('span');
+    ntrpSpan.style.cssText = 'font-family:var(--font-mono,monospace);font-size:13px;color:' + (ntrpColor[p.ntrp]||'var(--teal)');
+    ntrpSpan.textContent = p.ntrp.toFixed(1);
+    td3.appendChild(ntrpSpan);
+
+    // Role cell
+    const td4 = document.createElement('td');
+    if (roles[p.name]) {
+      const span = document.createElement('span');
+      span.className = 'pill pill-player';
+      span.textContent = roles[p.name];
+      td4.appendChild(span);
+    } else {
+      td4.innerHTML = '<span style="color:var(--text-dim);font-size:13px">Player</span>';
+    }
+
+    // Preference cell
+    const td5 = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;gap:6px;align-items:center';
+    wrap.innerHTML = prefBadge(pref);
+    const sel = document.createElement('select');
+    sel.className = 'form-select';
+    sel.style.cssText = 'margin:0;padding:4px 8px;font-size:11px;height:28px;min-width:90px';
+    ['singles','doubles','both'].forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v.charAt(0).toUpperCase() + v.slice(1);
+      if (v === pref) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => saveRosterPref(p.name, sel.value));
+    wrap.appendChild(sel);
+    td5.appendChild(wrap);
+
+    tr.append(td1, td2, td3, td4, td5);
+    tbody.appendChild(tr);
+  });
+
+  // Reserves shown in Player Lines tab, not here
 }
 
 // ══════════════════════════════════════
@@ -1221,36 +1344,60 @@ function renderRoster() {
 // ══════════════════════════════════════
 function renderLines() {
   const container = document.getElementById('lines-container');
-  const lines = appData.playerLines;
-  const singles = lines.filter(l => l.type === 'singles').sort((a,b) => a.line - b.line);
-  const doubles = lines.filter(l => l.type === 'doubles').sort((a,b) => a.line - b.line);
+  const lines = (appData.playerLines || []);
+  const singles = lines.filter(l => l.type === 'singles').sort((a,b) => a.line - b.line).slice(0,2);
+  const doubles = lines.filter(l => l.type === 'doubles').sort((a,b) => a.line - b.line).slice(0,3);
 
-  let html = `<div style="font-family:var(--font-sans,sans-serif);font-size:11px;letter-spacing:.1em;color:var(--text-dim);margin-bottom:12px;text-transform:uppercase">Singles</div>`;
+  const activePlayers = new Set();
+  singles.forEach(l => { if (l.player) activePlayers.add(l.player); });
+  doubles.forEach(l => { if (l.player1) activePlayers.add(l.player1); if (l.player2) activePlayers.add(l.player2); });
+  const reserves = ROSTER.filter(p => !activePlayers.has(p.name));
+
+  let html = '<div style="font-size:11px;font-weight:500;letter-spacing:.1em;color:var(--text-dim);margin-bottom:12px;text-transform:uppercase">Singles — 2 Lines</div>';
   singles.forEach(l => {
-    html += `<div class="line-card">
-      <div class="line-number">Singles<span>#${l.line}</span></div>
-      <div class="line-divider"></div>
-      <div class="line-players">
-        <div class="line-player-name">${l.player}</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${l.notes||''}</div>
-      </div>
-      <span class="line-tag tag-singles">Singles</span>
-    </div>`;
+    html += '<div class="line-card">' +
+      '<div class="line-number">Singles<span>#' + l.line + '</span></div>' +
+      '<div class="line-divider"></div>' +
+      '<div class="line-players">' +
+        '<div class="line-player-name">' + (l.player||'—') + '</div>' +
+        '<div style="font-size:12px;color:var(--text-dim);margin-top:4px">' + (l.notes||'') + '</div>' +
+      '</div>' +
+      '<span class="line-tag tag-singles">Singles</span>' +
+    '</div>';
   });
 
-  html += `<div style="font-family:var(--font-sans,sans-serif);font-size:11px;letter-spacing:.1em;color:var(--text-dim);margin:20px 0 12px;text-transform:uppercase">Doubles</div>`;
+  html += '<div style="font-size:11px;font-weight:500;letter-spacing:.1em;color:var(--text-dim);margin:20px 0 12px;text-transform:uppercase">Doubles — 3 Lines</div>';
   doubles.forEach(l => {
-    html += `<div class="line-card">
-      <div class="line-number">Doubles<span>#${l.line}</span></div>
-      <div class="line-divider"></div>
-      <div class="line-players">
-        <div class="line-player-name">${l.player1}</div>
-        <div class="line-player-name" style="color:var(--text-muted);font-size:13px">${l.player2}</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${l.notes||''}</div>
-      </div>
-      <span class="line-tag tag-doubles">Doubles</span>
-    </div>`;
+    html += '<div class="line-card">' +
+      '<div class="line-number">Doubles<span>#' + l.line + '</span></div>' +
+      '<div class="line-divider"></div>' +
+      '<div class="line-players">' +
+        '<div class="line-player-name">' + (l.player1||'—') + '</div>' +
+        '<div class="line-player-name" style="color:var(--text-muted);font-size:13px">' + (l.player2||'—') + '</div>' +
+        '<div style="font-size:12px;color:var(--text-dim);margin-top:4px">' + (l.notes||'') + '</div>' +
+      '</div>' +
+      '<span class="line-tag tag-doubles">Doubles</span>' +
+    '</div>';
   });
+
+  if (reserves.length) {
+    html += '<div style="font-size:11px;font-weight:500;letter-spacing:.1em;color:var(--text-dim);margin:28px 0 12px;text-transform:uppercase">Reserves — ' + reserves.length + ' player' + (reserves.length!==1?'s':'') + ' not in lineup</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:10px">';
+    reserves.forEach(p => {
+      const pref = (appData.rosterPrefs && appData.rosterPrefs[p.name]) || p.pref || 'both';
+      const prefColors = { singles:'var(--accent)', doubles:'var(--teal)', both:'var(--success)' };
+      const prefColor = prefColors[pref] || 'var(--success)';
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:5px;min-width:180px">' +
+        '<div style="font-size:14px;font-weight:500">' + p.name + '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--teal)">' + p.ntrp.toFixed(1) + '</span>' +
+          '<span style="font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(90,106,122,0.2);color:var(--text-dim);border:1px solid rgba(90,106,122,0.25)">Reserve</span>' +
+          '<span style="font-size:11px;padding:2px 8px;border-radius:100px;color:' + prefColor + ';background:' + prefColor + '1a;border:1px solid ' + prefColor + '33">' + pref + '</span>' +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
   container.innerHTML = html;
 }
 
@@ -1262,44 +1409,115 @@ function playerOptions(selected) {
 }
 
 function openLineEditor() {
-  const lines = appData.playerLines;
-  const singles = lines.filter(l => l.type==='singles').sort((a,b)=>a.line-b.line);
-  const doubles = lines.filter(l => l.type==='doubles').sort((a,b)=>a.line-b.line);
-  let html = `<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Singles</div>`;
+  const existing = appData.playerLines || [];
+  const gs = (n) => existing.find(l => l.type==='singles' && l.line===n) || { type:'singles', line:n, player:'', notes:'' };
+  const gd = (n) => existing.find(l => l.type==='doubles' && l.line===n) || { type:'doubles', line:n, player1:'', player2:'', notes:'' };
+  const singles = [gs(1), gs(2)];
+  const doubles = [gd(1), gd(2), gd(3)];
+
+  let html = '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Singles (2 lines)</div>';
   singles.forEach(l => {
-    html += `<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:center;margin-bottom:10px">
-      <div style="font-size:12px;color:var(--text-muted)">Line ${l.line}</div>
-      <select class="form-select" id="s-line-${l.line}" style="margin:0">${playerOptions(l.player)}</select>
-    </div>`;
+    html += '<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:center;margin-bottom:10px">' +
+      '<div style="font-size:12px;color:var(--text-muted)">Line ' + l.line + '</div>' +
+      '<select class="form-select line-sel" id="s-line-' + l.line + '" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player) + '</select>' +
+    '</div>';
   });
-  html += `<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:18px 0 12px">Doubles</div>`;
+  html += '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:18px 0 12px">Doubles (3 lines)</div>';
   doubles.forEach(l => {
-    html += `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">
-      <div style="font-size:12px;color:var(--text-muted)">Line ${l.line}</div>
-      <select class="form-select" id="d-line-${l.line}-p1" style="margin:0">${playerOptions(l.player1)}</select>
-      <select class="form-select" id="d-line-${l.line}-p2" style="margin:0">${playerOptions(l.player2)}</select>
-    </div>`;
+    html += '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">' +
+      '<div style="font-size:12px;color:var(--text-muted)">Line ' + l.line + '</div>' +
+      '<select class="form-select line-sel" id="d-line-' + l.line + '-p1" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player1) + '</select>' +
+      '<select class="form-select line-sel" id="d-line-' + l.line + '-p2" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player2) + '</select>' +
+    '</div>';
   });
   document.getElementById('line-editor-fields').innerHTML = html;
   document.getElementById('line-editor').style.display = 'block';
+  updateLineConflicts(); // apply initial conflict state
 }
 
-async function saveLines() {
-  appData.playerLines.forEach(l => {
-    if (l.type === 'singles') {
-      const sel = document.getElementById(`s-line-${l.line}`);
-      if (sel) { l.player = sel.value; const p = ROSTER.find(r=>r.name===sel.value); l.notes = p ? p.ntrp.toFixed(1)+' NTRP' : l.notes; }
-    } else {
-      const s1 = document.getElementById(`d-line-${l.line}-p1`);
-      const s2 = document.getElementById(`d-line-${l.line}-p2`);
-      if (s1) l.player1 = s1.value;
-      if (s2) l.player2 = s2.value;
-      const p1 = ROSTER.find(r=>r.name===l.player1), p2 = ROSTER.find(r=>r.name===l.player2);
-      l.notes = [p1,p2].filter(Boolean).map(p=>p.ntrp.toFixed(1)).join(' / ') + ' NTRP';
+// Called whenever any line dropdown changes.
+// Rules:
+//   - Singles players cannot appear in any doubles dropdown
+//   - Doubles players cannot appear in either singles dropdown
+//   - A player already picked in another slot of the SAME type is also blocked
+function updateLineConflicts() {
+  // Gather current selections
+  const singlesVals = [
+    (document.getElementById('s-line-1') || {}).value || '',
+    (document.getElementById('s-line-2') || {}).value || '',
+  ].filter(Boolean);
+
+  const doublesVals = [
+    (document.getElementById('d-line-1-p1') || {}).value || '',
+    (document.getElementById('d-line-1-p2') || {}).value || '',
+    (document.getElementById('d-line-2-p1') || {}).value || '',
+    (document.getElementById('d-line-2-p2') || {}).value || '',
+    (document.getElementById('d-line-3-p1') || {}).value || '',
+    (document.getElementById('d-line-3-p2') || {}).value || '',
+  ].filter(Boolean);
+
+  const allSelects = [...document.querySelectorAll('.line-sel')];
+
+  allSelects.forEach(sel => {
+    const isSingles = sel.id.startsWith('s-');
+    const isDoubles = sel.id.startsWith('d-');
+
+    // Which players are blocked for THIS select?
+    const blocked = new Set();
+
+    if (isSingles) {
+      // Block: players already in doubles
+      doublesVals.forEach(v => blocked.add(v));
+      // Block: the OTHER singles slot (can't play 2 singles lines)
+      singlesVals.forEach(v => { if (v !== sel.value) blocked.add(v); });
     }
+    if (isDoubles) {
+      // Block: players already in singles
+      singlesVals.forEach(v => blocked.add(v));
+      // Block: players already in OTHER doubles slots
+      doublesVals.forEach(v => { if (v !== sel.value) blocked.add(v); });
+    }
+
+    [...sel.options].forEach(opt => {
+      if (!opt.value) return; // keep the blank "— select —" option
+      const isBlocked = blocked.has(opt.value);
+      opt.disabled = isBlocked;
+      opt.style.color    = isBlocked ? 'var(--text-dim)'    : '';
+      opt.style.background = isBlocked ? 'rgba(0,0,0,0.3)'  : '';
+      // Prefix blocked options so it's obvious
+      if (isBlocked && !opt.text.startsWith('✕ ')) {
+        opt.text = '✕ ' + opt.text;
+      } else if (!isBlocked && opt.text.startsWith('✕ ')) {
+        opt.text = opt.text.slice(2);
+      }
+    });
   });
-  persistData();
+}
+
+
+async function saveLines() {
+  const newLines = [];
+  [1,2].forEach(n => {
+    const sel = document.getElementById('s-line-' + n);
+    const v = sel ? sel.value : '';
+    const p = ROSTER.find(r => r.name === v);
+    newLines.push({ type:'singles', line:n, player: v,
+      notes: p ? p.ntrp.toFixed(1) + ' NTRP' : '' });
+  });
+  [1,2,3].forEach(n => {
+    const s1 = document.getElementById('d-line-' + n + '-p1');
+    const s2 = document.getElementById('d-line-' + n + '-p2');
+    const v1 = s1 ? s1.value : '';
+    const v2 = s2 ? s2.value : '';
+    const p1 = ROSTER.find(r => r.name === v1);
+    const p2 = ROSTER.find(r => r.name === v2);
+    newLines.push({ type:'doubles', line:n, player1: v1, player2: v2,
+      notes: [p1,p2].filter(Boolean).map(p => p.ntrp.toFixed(1)).join(' / ') + ' NTRP' });
+  });
+  appData.playerLines = newLines;
+  await persistData();
   renderLines();
+  renderRoster();
   closeLineEditor();
   showToast('Lines saved!');
 }
@@ -1313,42 +1531,61 @@ function closeLineEditor() {
 // ══════════════════════════════════════
 function renderCombos() {
   const container = document.getElementById('combo-container');
-  const combos = appData.doublesCombos;
-
+  const combos = appData.doublesCombos || [];
+  const statusEl = document.getElementById('combos-status');
   if (!combos.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-title">No combo data yet</div><div class="empty-sub">Log practice sessions to build stats</div></div>`;
+    if (statusEl) statusEl.style.display = 'none';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">&#129309;</div><div class="empty-title">No combo data yet</div><div class="empty-sub">Log doubles practice sessions then hit Refresh Combos</div></div>';
     return;
   }
-
-  container.innerHTML = combos.map(c => {
+  const sorted = [...combos].sort((a,b) => {
+    const ap = (a.wins+a.losses) ? a.wins/(a.wins+a.losses) : 0;
+    const bp = (b.wins+b.losses) ? b.wins/(b.wins+b.losses) : 0;
+    return bp - ap || (b.wins+b.losses) - (a.wins+a.losses);
+  });
+  if (statusEl) {
+    const total = combos.reduce((s,c) => s + c.wins + c.losses, 0);
+    statusEl.textContent = combos.length + ' pairings · ' + total + ' doubles matches tracked';
+    statusEl.style.display = 'block';
+  }
+  const medals = ['&#127945; ','&#127946; ','&#127947; '];
+  container.innerHTML = sorted.map((c, rank) => {
     const total = c.wins + c.losses;
     const pct = total ? Math.round(c.wins/total*100) : 0;
-    return `
-      <div class="combo-card">
-        <div class="combo-pair">
-          <span class="player-pill">${c.p1}</span>
-          <span class="combo-vs">&amp;</span>
-          <span class="player-pill">${c.p2}</span>
-        </div>
-        <div class="combo-stats">
-          <div class="combo-stat">
-            <div class="combo-stat-val win-pct">${pct}%</div>
-            <div class="combo-stat-lbl">Win Rate</div>
-          </div>
-          <div class="combo-stat">
-            <div class="combo-stat-val">${c.wins}</div>
-            <div class="combo-stat-lbl">Wins</div>
-          </div>
-          <div class="combo-stat">
-            <div class="combo-stat-val losses">${c.losses}</div>
-            <div class="combo-stat-lbl">Losses</div>
-          </div>
-        </div>
-        <div style="margin-top:12px;font-size:12px;color:var(--text-dim)">
-          Sets: ${c.sets_won} won / ${c.sets_lost} lost
-        </div>
-      </div>`;
+    const medal = rank < 3 && total > 0 ? medals[rank] : '';
+    return '<div class="combo-card">' +
+      '<div class="combo-pair"><span class="player-pill">' + c.p1 + '</span><span class="combo-vs">&amp;</span><span class="player-pill">' + c.p2 + '</span></div>' +
+      '<div class="combo-stats">' +
+        '<div class="combo-stat"><div class="combo-stat-val win-pct">' + medal + pct + '%</div><div class="combo-stat-lbl">Win Rate</div></div>' +
+        '<div class="combo-stat"><div class="combo-stat-val">' + c.wins + '</div><div class="combo-stat-lbl">Wins</div></div>' +
+        '<div class="combo-stat"><div class="combo-stat-val losses">' + c.losses + '</div><div class="combo-stat-lbl">Losses</div></div>' +
+      '</div>' +
+      '<div style="margin-top:12px;font-size:12px;color:var(--text-dim)">' + total + ' matches played</div>' +
+    '</div>';
   }).join('');
+}
+
+async function refreshCombos() {
+  const sessions = appData.practiceSessions || [];
+  const map = {};
+  let scanned = 0;
+  sessions.forEach(s => {
+    (s.matches || []).forEach(m => {
+      if (m.type !== 'doubles') return;
+      const our = (m.p1 || '').split(' & ').map(x => x.trim()).filter(Boolean);
+      if (our.length < 2) return;
+      scanned++;
+      const key = [our[0], our[1]].sort().join(' & ');
+      if (!map[key]) map[key] = { p1: our[0], p2: our[1], wins: 0, losses: 0 };
+      if (m.result === 'win') map[key].wins++; else map[key].losses++;
+    });
+  });
+  appData.doublesCombos = Object.values(map);
+  await persistData();
+  renderCombos();
+  showToast(appData.doublesCombos.length
+    ? 'Found ' + appData.doublesCombos.length + ' pairings from ' + scanned + ' doubles matches!'
+    : 'No doubles matches found — log doubles sessions first.');
 }
 
 // ══════════════════════════════════════
