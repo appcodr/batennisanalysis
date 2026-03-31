@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Baseline Authority — Team HQ</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Unbounded:wght@400;600;700&amp;family=DM+Sans:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
+
 <style>
   :root {
     --clay: #eef5f0;
@@ -651,6 +652,10 @@
   .tag-doubles { background: rgba(26,107,90,0.12); color: var(--teal); }
 
   /* ── ALERT / TOAST ── */
+  #sync-badge {
+    pointer-events: none;
+  }
+
   .toast {
     position: fixed; bottom: 24px; right: 24px;
     background: var(--success);
@@ -722,6 +727,7 @@
       Baseline Authority
     </div>
     <div class="header-right">
+      <div id="sync-badge" style="font-size:11px;color:var(--teal);opacity:0;transition:opacity 0.5s;padding:4px 10px;background:rgba(0,180,216,0.1);border-radius:100px;border:1px solid rgba(0,180,216,0.2)"></div>
       <div class="user-chip">
         <div class="user-avatar" id="user-avatar">?</div>
         <span id="user-label">—</span>
@@ -939,7 +945,7 @@
 
 <script>
 // ══════════════════════════════════════
-// STORAGE KEY  — Persistent via Artifact storage API
+// STORAGE KEY
 // ══════════════════════════════════════
 const STORAGE_KEY = 'baseline-authority-data';
 
@@ -981,30 +987,143 @@ const DEFAULT_DATA = {
 };
 
 // ══════════════════════════════════════
-// DATA LAYER — Artifact Storage API
+// FIRESTORE REST API — No SDK needed, works everywhere
+// Uses Firestore REST API with fetch() — zero external script dependency
 // ══════════════════════════════════════
+const FS_PROJECT  = 'batennis-bf327';
+const FS_API_KEY  = 'AIzaSyBeXb8efoWk5LL7BKgVK1uywUuuYrKU9YA';
+const FS_BASE     = `https://firestore.googleapis.com/v1/projects/${FS_PROJECT}/databases/(default)/documents`;
+const FS_DOC_PATH = 'teamdata/baseline-authority';
+const FS_DOC_URL  = `${FS_BASE}/${FS_DOC_PATH}?key=${FS_API_KEY}`;
+
+// Convert JS object → Firestore REST fields format
+function toFirestore(obj) {
+  function encodeValue(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'boolean')        return { booleanValue: v };
+    if (typeof v === 'number')         return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    if (typeof v === 'string')         return { stringValue: v };
+    if (Array.isArray(v))              return { arrayValue: { values: v.map(encodeValue) } };
+    if (typeof v === 'object')         return { mapValue: { fields: toFirestore(v) } };
+    return { stringValue: String(v) };
+  }
+  const fields = {};
+  for (const [k, val] of Object.entries(obj)) fields[k] = encodeValue(val);
+  return fields;
+}
+
+// Convert Firestore REST fields → plain JS object
+function fromFirestore(fields) {
+  function decodeValue(v) {
+    if ('nullValue'    in v) return null;
+    if ('booleanValue' in v) return v.booleanValue;
+    if ('integerValue' in v) return parseInt(v.integerValue, 10);
+    if ('doubleValue'  in v) return v.doubleValue;
+    if ('stringValue'  in v) return v.stringValue;
+    if ('arrayValue'   in v) return (v.arrayValue.values || []).map(decodeValue);
+    if ('mapValue'     in v) return fromFirestore(v.mapValue.fields || {});
+    return null;
+  }
+  const obj = {};
+  for (const [k, val] of Object.entries(fields || {})) obj[k] = decodeValue(val);
+  return obj;
+}
+
 let appData = null;
+let _pollInterval = null;
+let _lastSaveTime = 0;
+
+async function fsGet() {
+  const r = await fetch(FS_DOC_URL);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('Firestore GET failed: ' + r.status);
+  const doc = await r.json();
+  return fromFirestore(doc.fields);
+}
+
+async function fsSave(data) {
+  // PATCH with updateMask so we replace the whole doc
+  const fields = toFirestore(data);
+  const fieldPaths = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+  const url = `${FS_BASE}/${FS_DOC_PATH}?key=${FS_API_KEY}&${fieldPaths}`;
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields })
+  });
+  if (!r.ok) throw new Error('Firestore PATCH failed: ' + r.status);
+  return r.json();
+}
+
+function mergeDefaults(data) {
+  if (!data.playerLines || !data.playerLines.length)
+    data.playerLines = JSON.parse(JSON.stringify(DEFAULT_DATA.playerLines));
+  if (!data.doublesCombos)    data.doublesCombos = [];
+  if (!data.matchHistory)     data.matchHistory = [];
+  if (!data.practiceSessions) data.practiceSessions = [];
+  return data;
+}
 
 async function loadData() {
   try {
-    const result = await window.storage.get(STORAGE_KEY);
-    if (result && result.value) {
-      appData = JSON.parse(result.value);
+    const remote = await fsGet();
+    if (remote) {
+      appData = mergeDefaults(remote);
     } else {
+      // First ever load — seed with defaults
       appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
-      await persistData();
+      await fsSave(appData);
     }
+    // Mirror to localStorage as offline cache
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    // Start polling every 10s to pick up changes from other devices
+    startPolling();
   } catch(e) {
-    appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    console.warn('Firestore unavailable, using localStorage cache:', e);
+    const raw = localStorage.getItem(STORAGE_KEY);
+    appData = raw ? mergeDefaults(JSON.parse(raw)) : JSON.parse(JSON.stringify(DEFAULT_DATA));
   }
 }
 
 async function persistData() {
+  // Save to localStorage immediately for instant local persistence
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch(e) {}
+  _lastSaveTime = Date.now();
+  // Push to Firestore
   try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(appData));
+    await fsSave(appData);
   } catch(e) {
-    console.warn('Storage unavailable — data saved in memory only.');
+    console.warn('Firestore save failed (data still in localStorage):', e);
   }
+}
+
+// Poll Firestore every 10s — picks up entries from other devices
+function startPolling() {
+  if (_pollInterval) clearInterval(_pollInterval);
+  _pollInterval = setInterval(async () => {
+    // Skip poll if we just saved (avoid re-rendering our own save)
+    if (Date.now() - _lastSaveTime < 5000) return;
+    try {
+      const remote = await fsGet();
+      if (!remote) return;
+      const remoteStr = JSON.stringify(remote);
+      const localStr  = JSON.stringify(appData);
+      if (remoteStr !== localStr) {
+        appData = mergeDefaults(remote);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+        renderScores(); renderLines(); renderCombos(); renderPracticeLog();
+        showSyncBadge();
+      }
+    } catch(e) { /* silent — offline */ }
+  }, 10000);
+}
+
+function showSyncBadge() {
+  const badge = document.getElementById('sync-badge');
+  if (!badge) return;
+  badge.textContent = '⟳ Synced from another device';
+  badge.style.opacity = '1';
+  setTimeout(() => { badge.style.opacity = '0'; }, 3000);
 }
 
 // ══════════════════════════════════════
@@ -1034,6 +1153,7 @@ document.getElementById('passcode-input').addEventListener('keydown', e => {
 });
 
 function logout() {
+  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('passcode-input').value = '';
@@ -1178,7 +1298,7 @@ async function saveLines() {
       l.notes = [p1,p2].filter(Boolean).map(p=>p.ntrp.toFixed(1)).join(' / ') + ' NTRP';
     }
   });
-  await persistData();
+  persistData();
   renderLines();
   closeLineEditor();
   showToast('Lines saved!');
@@ -1565,7 +1685,7 @@ async function saveSession() {
 
   const session = { date, time: timeVal, type, notes, matches, weather, loggedBy: 'Elan/Rohith', timestamp: Date.now() };
   appData.practiceSessions.push(session);
-  await persistData();
+  persistData();
 
   showToast('Session saved with weather!');
   clearForm();
@@ -1586,7 +1706,7 @@ function clearForm() {
 async function deleteSession(idx) {
   if (!confirm('Delete this session?')) return;
   appData.practiceSessions.splice(idx, 1);
-  await persistData();
+  persistData();
   renderPracticeLog();
   renderScores();
   showToast('Session deleted.');
