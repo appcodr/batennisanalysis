@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baseline Authority — Team HQ</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Unbounded:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --clay: #1a1a2e;
+    --clay-light: #16213e;
+    --clay-mid: #0f3460;
+    --accent: #e94560;
+    --accent2: #f5a623;
+    --teal: #00b4d8;
+    --surface: #1e2a3a;
+    --surface2: #243447;
+    --border: rgba(255,255,255,0.08);
+    --border-accent: rgba(233,69,96,0.4);
+    --text: #f0f4f8;
+    --text-muted: #8a9bb0;
+    --text-dim: #5a6a7a;
+    --success: #00c896;
+    --warning: #f5a623;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--clay);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── BACKGROUND GRID ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(233,69,96,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(233,69,96,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── LOGIN SCREEN ── */
+  #login-screen {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--clay);
+    z-index: 1000;
+    gap: 0;
+  }
+
+  .login-logo {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .login-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  .login-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 48px;
+    letter-spacing: 0.05em;
+  }
+
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    width: min(400px, 90vw);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .login-card::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 160px; height: 160px;
+    background: radial-gradient(circle, rgba(233,69,96,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .login-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .login-input {
+    width: 100%;
+    background: var(--clay-mid);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 18px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    letter-spacing: 0.05em;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 20px;
+  }
+
+  .login-input:focus { border-color: var(--accent); }
+
+  .login-btn {
+    width: 100%;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 15px;
+    color: #fff;
+    font-family: 'Unbounded', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+
+  .login-btn:hover { opacity: 0.9; }
+  .login-btn:active { transform: scale(0.98); }
+
+  .login-error {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--accent);
+    text-align: center;
+    display: none;
+  }
+
+  .login-badge {
+    margin-top: 24px;
+    display: flex; gap: 10px;
+    justify-content: center;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 4px 12px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  /* ── APP LAYOUT ── */
+  #app { display: none; position: relative; z-index: 1; min-height: 100vh; }
+
+  /* ── HEADER ── */
+  .header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(26,26,46,0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 60px;
+  }
+
+  .header-brand {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .header-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .header-right { display: flex; align-items: center; gap: 16px; }
+
+  .user-chip {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    background: var(--surface);
+    border-radius: 100px;
+    border: 1px solid var(--border);
+  }
+
+  .user-avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: #fff;
+  }
+
+  .logout-btn {
+    font-size: 11px;
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .logout-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── NAV TABS ── */
+  .nav-tabs {
+    display: flex; gap: 2px;
+    padding: 16px 24px 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+
+  .nav-tab {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: 'Unbounded', sans-serif;
+    padding: 10px 20px;
+    border-radius: 10px 10px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    background: transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .nav-tab:hover { color: var(--text); }
+
+  .nav-tab.active {
+    background: var(--surface);
+    border-color: var(--border);
+    border-bottom-color: var(--surface);
+    color: var(--accent);
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main { padding: 32px 24px; max-width: 1100px; margin: 0 auto; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .section-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .section-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── STAT CARDS ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative; overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .stat-card.teal::after { background: var(--teal); }
+  .stat-card.green::after { background: var(--success); }
+  .stat-card.amber::after { background: var(--warning); }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+  }
+
+  .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── TABLE ── */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .table-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Unbounded', sans-serif;
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  th {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 12px 20px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+
+  td {
+    padding: 13px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .pill {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 11px; font-weight: 500;
+  }
+
+  .pill-win { background: rgba(0,200,150,0.15); color: var(--success); }
+  .pill-loss { background: rgba(233,69,96,0.15); color: var(--accent); }
+  .pill-player { background: rgba(0,180,216,0.12); color: var(--teal); }
+
+  /* ── FORM ELEMENTS ── */
+  .form-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+  .form-group { display: flex; flex-direction: column; gap: 8px; }
+
+  .form-group.full { grid-column: 1 / -1; }
+
+  .form-label {
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .form-input, .form-select, .form-textarea {
+    background: var(--clay-mid);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .form-select option { background: var(--clay-mid); }
+
+  .form-textarea { resize: vertical; min-height: 80px; }
+
+  .score-row {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    gap: 12px; margin-bottom: 8px;
+  }
+
+  .score-vs {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border: none; border-radius: var(--radius-sm);
+    padding: 13px 28px;
+    color: #fff;
+    font-family: 'Unbounded', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .btn-primary:hover { opacity: 0.88; }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 22px;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+
+  /* ── SESSION LOG ── */
+  .session-item {
+    background: var(--clay-light);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+
+  .session-item:hover { border-color: rgba(233,69,96,0.3); }
+
+  .session-meta {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .session-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--teal);
+  }
+
+  .session-type {
+    font-size: 11px; padding: 3px 10px;
+    border-radius: 100px;
+    background: rgba(245,166,35,0.12);
+    color: var(--warning);
+  }
+
+  .session-matches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+  .match-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .match-chip .score { font-family: 'DM Mono', monospace; color: var(--success); }
+  .match-chip .score.loss { color: var(--accent); }
+
+  .session-notes {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+  }
+
+  .delete-btn {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    transition: color 0.2s;
+    line-height: 1;
+  }
+
+  .delete-btn:hover { color: var(--accent); }
+
+  /* ── PLAYER COMBO CARDS ── */
+  .combo-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .combo-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative; overflow: hidden;
+  }
+
+  .combo-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--teal), var(--accent));
+  }
+
+  .combo-pair {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .player-pill {
+    padding: 5px 12px;
+    background: rgba(0,180,216,0.1);
+    border: 1px solid rgba(0,180,216,0.2);
+    border-radius: 100px;
+    font-size: 12px;
+    color: var(--teal);
+    font-weight: 500;
+  }
+
+  .combo-vs { font-size: 10px; color: var(--text-dim); }
+
+  .combo-stats {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .combo-stat { text-align: center; }
+
+  .combo-stat-val {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .combo-stat-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; letter-spacing: 0.08em; }
+
+  .win-pct { color: var(--success); }
+  .losses { color: var(--accent); }
+
+  /* ── LINE CARDS ── */
+  .lines-grid { display: flex; flex-direction: column; gap: 16px; }
+
+  .line-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex; align-items: center; gap: 20px;
+  }
+
+  .line-number {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    min-width: 70px;
+  }
+
+  .line-number span {
+    display: block;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0;
+  }
+
+  .line-divider { width: 1px; height: 48px; background: var(--border); }
+
+  .line-players { flex: 1; }
+
+  .line-player-name {
+    font-size: 14px; font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .line-player-name:last-child { margin-bottom: 0; color: var(--text-muted); font-size: 13px; }
+
+  .line-tag {
+    font-size: 10px; padding: 3px 9px;
+    border-radius: 100px;
+    letter-spacing: 0.08em;
+  }
+
+  .tag-singles { background: rgba(233,69,96,0.12); color: var(--accent); }
+  .tag-doubles { background: rgba(0,180,216,0.12); color: var(--teal); }
+
+  /* ── ALERT / TOAST ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--success);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 9999;
+    transform: translateY(80px); opacity: 0;
+    transition: all 0.3s;
+    pointer-events: none;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { background: var(--accent); }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty-icon { font-size: 40px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-title { font-family: 'Unbounded', sans-serif; font-size: 15px; margin-bottom: 8px; }
+  .empty-sub { font-size: 13px; color: var(--text-dim); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 600px) {
+    .main { padding: 20px 16px; }
+    .header { padding: 0 16px; }
+    .nav-tabs { padding: 12px 16px 0; }
+    .login-card { padding: 28px 24px; }
+    .line-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .line-divider { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOGIN SCREEN ══════════ -->
+<div id="login-screen">
+  <div class="login-logo">Team HQ · Authorized Access</div>
+  <h1 class="login-title">Baseline Authority</h1>
+  <p class="login-subtitle">USTA Spring Adult 18+ · Austin, TX</p>
+
+  <div class="login-card">
+    <label class="login-label" for="passcode-input">Access Code</label>
+    <input class="login-input" id="passcode-input" type="password"
+      placeholder="Enter team access code"
+      autocomplete="off" spellcheck="false" />
+
+    <button class="login-btn" onclick="attemptLogin()">Enter Team HQ →</button>
+    <div class="login-error" id="login-error">Incorrect code. Try again.</div>
+
+    <div class="login-badge">
+      <div class="badge"><div class="badge-dot"></div>Elan Braverman · Captain</div>
+      <div class="badge"><div class="badge-dot" style="background:var(--teal)"></div>Rohith Chinnasamy · Analyst</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MAIN APP ══════════ -->
+<div id="app">
+
+  <header class="header">
+    <div class="header-brand">
+      <div class="header-dot"></div>
+      Baseline Authority
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-label">—</span>
+      </div>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('scores')">Season Scores</button>
+    <button class="nav-tab" onclick="switchTab('roster')">Roster</button>
+    <button class="nav-tab" onclick="switchTab('players')">Player Lines</button>
+    <button class="nav-tab" onclick="switchTab('combos')">Doubles Combos</button>
+    <button class="nav-tab" onclick="switchTab('practice')">Practice Log</button>
+    <button class="nav-tab" onclick="switchTab('log-entry')">Log Session</button>
+  </div>
+
+  <div class="main">
+
+    <!-- ── SCORES TAB ── -->
+    <div class="tab-panel active" id="panel-scores">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Season Scores</div>
+          <div class="section-subtitle">USTA Spring Adult 18+ WeekEND · 2026</div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Matches Won</div>
+          <div class="stat-value" id="stat-wins">—</div>
+          <div class="stat-sub">This season</div>
+        </div>
+        <div class="stat-card teal">
+          <div class="stat-label">Matches Lost</div>
+          <div class="stat-value" id="stat-losses">—</div>
+          <div class="stat-sub">This season</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Win Rate</div>
+          <div class="stat-value" id="stat-rate">—</div>
+          <div class="stat-sub">Season average</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Sessions Logged</div>
+          <div class="stat-value" id="stat-sessions">—</div>
+          <div class="stat-sub">Total practice</div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">Match History</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Opponent</th>
+              <th>Line</th>
+              <th>Players</th>
+              <th>Score</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="scores-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:32px">
+              Loading scores…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── ROSTER TAB ── -->
+    <div class="tab-panel" id="panel-roster">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Team Roster</div>
+          <div class="section-subtitle">13 Players · USTA Spring Adult 18+ WeekEND 2026</div>
+        </div>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Player Name</th>
+              <th>NTRP</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody id="roster-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+
+    <!-- ── PLAYERS TAB ── -->
+    <div class="tab-panel" id="panel-players">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Player Lines</div>
+          <div class="section-subtitle">Singles &amp; Doubles assignments</div>
+        </div>
+        <button class="btn-primary" onclick="openLineEditor()">Edit Lines</button>
+      </div>
+
+      <div class="lines-grid" id="lines-container"></div>
+
+      <div id="line-editor" style="display:none;margin-top:24px">
+        <div class="form-card">
+          <div style="font-family:'Unbounded',sans-serif;font-size:13px;margin-bottom:20px;color:var(--teal)">Edit Line Assignments</div>
+          <div id="line-editor-fields"></div>
+          <div class="btn-row">
+            <button class="btn-primary" onclick="saveLines()">Save Lines →</button>
+            <button class="btn-secondary" onclick="closeLineEditor()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COMBOS TAB ── -->
+    <div class="tab-panel" id="panel-combos">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Doubles Combinations</div>
+          <div class="section-subtitle">Partnership stats from practice sessions</div>
+        </div>
+      </div>
+
+      <div class="combo-grid" id="combo-container">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- ── PRACTICE LOG TAB ── -->
+    <div class="tab-panel" id="panel-practice">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Practice Sessions</div>
+          <div class="section-subtitle">All logged sessions — persistent &amp; never lost</div>
+        </div>
+      </div>
+
+      <div id="practice-log-list">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- ── LOG SESSION TAB ── -->
+    <div class="tab-panel" id="panel-log-entry">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Log a Session</div>
+          <div class="section-subtitle">Enter practice scores for any date</div>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Session Date</label>
+            <input class="form-input" type="date" id="session-date" onchange="previewWeather()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Session Time (approx)</label>
+            <input class="form-input" type="time" id="session-time" value="09:00" onchange="previewWeather()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Session Type</label>
+            <select class="form-select" id="session-type">
+              <option value="Practice">Practice</option>
+              <option value="Drill">Drill Session</option>
+              <option value="Match Play">Match Play</option>
+              <option value="Team Practice">Team Practice</option>
+              <option value="Warmup">Warmup</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Weather at Session Time</label>
+            <div id="weather-preview" style="background:var(--clay-mid);border:1px solid var(--border);border-radius:8px;padding:11px 14px;font-size:13px;color:var(--text-muted);min-height:44px;display:flex;align-items:center;gap:10px">
+              <span style="color:var(--text-dim)">Select date &amp; time to fetch…</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; margin-bottom:8px;">
+          <div class="form-label" style="margin-bottom:14px">Match Scores Played</div>
+          <div id="match-entries">
+            <!-- entries added by JS -->
+          </div>
+          <button class="btn-secondary" onclick="addMatchEntry()" style="margin-top:8px">
+            + Add Match
+          </button>
+        </div>
+
+        <div style="margin-top:20px">
+          <div class="form-group">
+            <label class="form-label">Session Notes (optional)</label>
+            <textarea class="form-textarea" id="session-notes" placeholder="Focus areas, observations, next steps…"></textarea>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" onclick="saveSession()">Save Session →</button>
+          <button class="btn-secondary" onclick="clearForm()">Clear</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════
+// STORAGE KEY  — Persistent via Artifact storage API
+// ══════════════════════════════════════
+const STORAGE_KEY = 'baseline-authority-data';
+
+// ══════════════════════════════════════
+// DEFAULT DATA
+// ══════════════════════════════════════
+const ROSTER = [
+  { name: 'Elan Vasudevan',             ntrp: 4.0 },
+  { name: 'Rohith Chinnaswamy',          ntrp: 4.0 },
+  { name: 'Brad Jackson',               ntrp: 4.0 },
+  { name: 'Jim Caldwell',               ntrp: 4.0 },
+  { name: 'Samir Modi',                 ntrp: 4.0 },
+  { name: 'Cade Thompson',              ntrp: 4.0 },
+  { name: 'Philip Bramson',             ntrp: 4.0 },
+  { name: 'Jose Martinez',              ntrp: 4.0 },
+  { name: 'Pavan Pawar',               ntrp: 4.0 },
+  { name: 'Gilbert Onyenwezi',          ntrp: 4.0 },
+  { name: 'Jean-Marie Kokou-Abi',       ntrp: 4.0 },
+  { name: 'Brahma Thodati',             ntrp: 4.0 },
+  { name: 'Phani Kumar Valluripalli',   ntrp: 3.5 },
+];
+
+const DEFAULT_DATA = {
+  matchHistory: [],
+  playerLines: [
+    { type: 'singles', line: 1, player: 'Elan Vasudevan',       notes: 'Captain · 4.0 NTRP' },
+    { type: 'singles', line: 2, player: 'Rohith Chinnaswamy',   notes: 'Analyst · 4.0 NTRP' },
+    { type: 'singles', line: 3, player: 'Brad Jackson',         notes: '4.0 NTRP' },
+    { type: 'singles', line: 4, player: 'Jim Caldwell',         notes: '4.0 NTRP' },
+    { type: 'singles', line: 5, player: 'Samir Modi',           notes: '4.0 NTRP' },
+    { type: 'doubles', line: 1, player1: 'Elan Vasudevan',      player2: 'Rohith Chinnaswamy',        notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 2, player1: 'Brad Jackson',        player2: 'Jim Caldwell',              notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 3, player1: 'Samir Modi',          player2: 'Cade Thompson',             notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 4, player1: 'Philip Bramson',      player2: 'Jose Martinez',             notes: '4.0 / 4.0' },
+    { type: 'doubles', line: 5, player1: 'Pavan Pawar',         player2: 'Gilbert Onyenwezi',         notes: '4.0 / 4.0' },
+  ],
+  doublesCombos: [],
+  practiceSessions: []
+};
+
+// ══════════════════════════════════════
+// DATA LAYER — Artifact Storage API
+// ══════════════════════════════════════
+let appData = null;
+
+async function loadData() {
+  try {
+    const result = await window.storage.get(STORAGE_KEY);
+    if (result && result.value) {
+      appData = JSON.parse(result.value);
+    } else {
+      appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      await persistData();
+    }
+  } catch(e) {
+    appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  }
+}
+
+async function persistData() {
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify(appData));
+  } catch(e) {
+    console.warn('Storage unavailable — data saved in memory only.');
+  }
+}
+
+// ══════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════
+const PASS = 'CaptainElan2026';
+let currentUser = null;
+
+function attemptLogin() {
+  const val = document.getElementById('passcode-input').value;
+  if (val === PASS) {
+    currentUser = { name: 'Captain/Analyst', initials: 'HQ' };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('user-label').textContent = 'Team HQ';
+    document.getElementById('user-avatar').textContent = 'HQ';
+    initApp();
+  } else {
+    document.getElementById('login-error').style.display = 'block';
+    document.getElementById('passcode-input').value = '';
+    document.getElementById('passcode-input').focus();
+  }
+}
+
+document.getElementById('passcode-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') attemptLogin();
+});
+
+function logout() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('passcode-input').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+// ══════════════════════════════════════
+// TABS
+// ══════════════════════════════════════
+function switchTab(id) {
+  const panels = ['scores','roster','players','combos','practice','log-entry'];
+  document.querySelectorAll('.nav-tab').forEach((t,i) => {
+    t.classList.toggle('active', panels[i] === id);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+}
+
+// ══════════════════════════════════════
+// RENDER SCORES
+// ══════════════════════════════════════
+function renderScores() {
+  const tbody = document.getElementById('scores-body');
+  const all = appData.matchHistory;
+  if (!all.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div></div></td></tr>`;
+    return;
+  }
+  const wins = all.filter(m => m.result === 'win').length;
+  const losses = all.filter(m => m.result === 'loss').length;
+  document.getElementById('stat-wins').textContent = wins;
+  document.getElementById('stat-losses').textContent = losses;
+  document.getElementById('stat-rate').textContent = all.length ? Math.round(wins/all.length*100) + '%' : '—';
+  document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
+
+  tbody.innerHTML = all.map(m => `
+    <tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--teal)">${m.date}</td>
+      <td style="font-weight:500">${m.opponent}</td>
+      <td><span class="pill pill-player">${m.line}</span></td>
+      <td style="font-size:13px;color:var(--text-muted)">${m.players}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:13px">${m.score}</td>
+      <td><span class="pill ${m.result==='win'?'pill-win':'pill-loss'}">${m.result==='win'?'W':'L'}</span></td>
+    </tr>
+  `).join('');
+}
+
+// ══════════════════════════════════════
+// RENDER ROSTER
+// ══════════════════════════════════════
+function renderRoster() {
+  const roles = { 'Elan Vasudevan': 'Captain', 'Rohith Chinnaswamy': 'Analyst' };
+  const ntrpColor = { 4.0: 'var(--teal)', 3.5: 'var(--warning)' };
+  document.getElementById('roster-body').innerHTML = ROSTER.map((p, i) => `
+    <tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim)">${String(i+1).padStart(2,'0')}</td>
+      <td style="font-weight:500">${p.name}</td>
+      <td><span style="font-family:'DM Mono',monospace;font-size:13px;color:${ntrpColor[p.ntrp]||'var(--teal)'}">${p.ntrp.toFixed(1)}</span></td>
+      <td>${roles[p.name] ? `<span class="pill pill-player">${roles[p.name]}</span>` : '<span style="color:var(--text-dim);font-size:13px">Player</span>'}</td>
+    </tr>`).join('');
+}
+
+// ══════════════════════════════════════
+// RENDER PLAYER LINES
+// ══════════════════════════════════════
+function renderLines() {
+  const container = document.getElementById('lines-container');
+  const lines = appData.playerLines;
+  const singles = lines.filter(l => l.type === 'singles').sort((a,b) => a.line - b.line);
+  const doubles = lines.filter(l => l.type === 'doubles').sort((a,b) => a.line - b.line);
+
+  let html = `<div style="font-family:'Unbounded',sans-serif;font-size:11px;letter-spacing:.1em;color:var(--text-dim);margin-bottom:12px;text-transform:uppercase">Singles</div>`;
+  singles.forEach(l => {
+    html += `<div class="line-card">
+      <div class="line-number">Singles<span>#${l.line}</span></div>
+      <div class="line-divider"></div>
+      <div class="line-players">
+        <div class="line-player-name">${l.player}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${l.notes||''}</div>
+      </div>
+      <span class="line-tag tag-singles">Singles</span>
+    </div>`;
+  });
+
+  html += `<div style="font-family:'Unbounded',sans-serif;font-size:11px;letter-spacing:.1em;color:var(--text-dim);margin:20px 0 12px;text-transform:uppercase">Doubles</div>`;
+  doubles.forEach(l => {
+    html += `<div class="line-card">
+      <div class="line-number">Doubles<span>#${l.line}</span></div>
+      <div class="line-divider"></div>
+      <div class="line-players">
+        <div class="line-player-name">${l.player1}</div>
+        <div class="line-player-name" style="color:var(--text-muted);font-size:13px">${l.player2}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${l.notes||''}</div>
+      </div>
+      <span class="line-tag tag-doubles">Doubles</span>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// ── LINE EDITOR ──
+function playerOptions(selected) {
+  return ROSTER.map(p =>
+    `<option value="${p.name}" ${p.name===selected?'selected':''}>${p.name} (${p.ntrp.toFixed(1)})</option>`
+  ).join('');
+}
+
+function openLineEditor() {
+  const lines = appData.playerLines;
+  const singles = lines.filter(l => l.type==='singles').sort((a,b)=>a.line-b.line);
+  const doubles = lines.filter(l => l.type==='doubles').sort((a,b)=>a.line-b.line);
+  let html = `<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Singles</div>`;
+  singles.forEach(l => {
+    html += `<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:center;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--text-muted)">Line ${l.line}</div>
+      <select class="form-select" id="s-line-${l.line}" style="margin:0">${playerOptions(l.player)}</select>
+    </div>`;
+  });
+  html += `<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:18px 0 12px">Doubles</div>`;
+  doubles.forEach(l => {
+    html += `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--text-muted)">Line ${l.line}</div>
+      <select class="form-select" id="d-line-${l.line}-p1" style="margin:0">${playerOptions(l.player1)}</select>
+      <select class="form-select" id="d-line-${l.line}-p2" style="margin:0">${playerOptions(l.player2)}</select>
+    </div>`;
+  });
+  document.getElementById('line-editor-fields').innerHTML = html;
+  document.getElementById('line-editor').style.display = 'block';
+}
+
+async function saveLines() {
+  appData.playerLines.forEach(l => {
+    if (l.type === 'singles') {
+      const sel = document.getElementById(`s-line-${l.line}`);
+      if (sel) { l.player = sel.value; const p = ROSTER.find(r=>r.name===sel.value); l.notes = p ? p.ntrp.toFixed(1)+' NTRP' : l.notes; }
+    } else {
+      const s1 = document.getElementById(`d-line-${l.line}-p1`);
+      const s2 = document.getElementById(`d-line-${l.line}-p2`);
+      if (s1) l.player1 = s1.value;
+      if (s2) l.player2 = s2.value;
+      const p1 = ROSTER.find(r=>r.name===l.player1), p2 = ROSTER.find(r=>r.name===l.player2);
+      l.notes = [p1,p2].filter(Boolean).map(p=>p.ntrp.toFixed(1)).join(' / ') + ' NTRP';
+    }
+  });
+  await persistData();
+  renderLines();
+  closeLineEditor();
+  showToast('Lines saved!');
+}
+
+function closeLineEditor() {
+  document.getElementById('line-editor').style.display = 'none';
+}
+
+// ══════════════════════════════════════
+// RENDER DOUBLES COMBOS
+// ══════════════════════════════════════
+function renderCombos() {
+  const container = document.getElementById('combo-container');
+  const combos = appData.doublesCombos;
+
+  if (!combos.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🤝</div><div class="empty-title">No combo data yet</div><div class="empty-sub">Log practice sessions to build stats</div></div>`;
+    return;
+  }
+
+  container.innerHTML = combos.map(c => {
+    const total = c.wins + c.losses;
+    const pct = total ? Math.round(c.wins/total*100) : 0;
+    return `
+      <div class="combo-card">
+        <div class="combo-pair">
+          <span class="player-pill">${c.p1}</span>
+          <span class="combo-vs">&amp;</span>
+          <span class="player-pill">${c.p2}</span>
+        </div>
+        <div class="combo-stats">
+          <div class="combo-stat">
+            <div class="combo-stat-val win-pct">${pct}%</div>
+            <div class="combo-stat-lbl">Win Rate</div>
+          </div>
+          <div class="combo-stat">
+            <div class="combo-stat-val">${c.wins}</div>
+            <div class="combo-stat-lbl">Wins</div>
+          </div>
+          <div class="combo-stat">
+            <div class="combo-stat-val losses">${c.losses}</div>
+            <div class="combo-stat-lbl">Losses</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--text-dim)">
+          Sets: ${c.sets_won} won / ${c.sets_lost} lost
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════
+// RENDER PRACTICE LOG
+// ══════════════════════════════════════
+function renderPracticeLog() {
+  const container = document.getElementById('practice-log-list');
+  const sessions = [...appData.practiceSessions].reverse();
+
+  if (!sessions.length) {
+    container.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">No sessions logged yet</div>
+      <div class="empty-sub">Use the "Log Session" tab to record practice scores</div>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = sessions.map((s, ridx) => {
+    const realIdx = appData.practiceSessions.length - 1 - ridx;
+    const matchesHtml = s.matches && s.matches.length
+      ? `<div class="session-matches">${s.matches.map(m => `
+          <div class="match-chip">
+            <span>${m.p1}</span>
+            <span class="score ${m.result==='loss'?'loss':''}">${m.score}</span>
+            <span>vs</span>
+            <span>${m.p2}</span>
+          </div>`).join('')}</div>`
+      : `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No match scores recorded</div>`;
+
+    const notesHtml = s.notes ? `<div class="session-notes">${s.notes}</div>` : '';
+
+    let weatherHtml = '';
+    if (s.weather) {
+      const wx = s.weather;
+      weatherHtml = `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:rgba(0,180,216,0.07);border:1px solid rgba(0,180,216,0.15);border-radius:8px;flex-wrap:wrap;">
+        <span style="font-size:18px">${wxIcon(wx.code)}</span>
+        <span style="font-size:13px;font-weight:500;color:var(--text)">${wx.temp}°F</span>
+        <span style="font-size:12px;color:var(--text-muted)">feels ${wx.feels}°F</span>
+        <span style="font-size:11px;color:var(--teal)">${wxCode(wx.code)}</span>
+        <span style="font-size:12px;color:var(--text-muted)">·</span>
+        <span style="font-size:12px;color:var(--text-muted)">💨 ${wx.wind} mph ${wx.windDir}</span>
+        <span style="font-size:12px;color:var(--text-muted)">Gusts ${wx.gusts} mph</span>
+        <span style="font-size:12px;color:var(--text-muted)">·</span>
+        <span style="font-size:12px;color:var(--text-muted)">💧 ${wx.humidity}%</span>
+        ${parseFloat(wx.precip) > 0 ? `<span style="font-size:12px;color:var(--warning)">🌧 ${wx.precip}" rain</span>` : ''}
+        <span style="font-size:11px;color:var(--text-dim);margin-left:auto">Austin, TX · ${s.time||''}</span>
+      </div>`;
+    }
+
+    return `<div class="session-item">
+      <div class="session-meta">
+        <span class="session-date">${s.date}</span>
+        ${s.time ? `<span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim)">${s.time}</span>` : ''}
+        <span class="session-type">${s.type}</span>
+        <span style="font-size:12px;color:var(--text-dim);margin-left:4px">logged by ${s.loggedBy||'Team'}</span>
+        <button class="delete-btn" onclick="deleteSession(${realIdx})" title="Delete session">✕</button>
+      </div>
+      ${weatherHtml}
+      ${matchesHtml}
+      ${notesHtml}
+    </div>`;
+  }).join('');
+
+  document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
+}
+
+// ══════════════════════════════════════
+// SESSION FORM
+// ══════════════════════════════════════
+let matchEntryCount = 0;
+
+function rosterOpts(includeBlank) {
+  let html = includeBlank ? '<option value="">— Select player —</option>' : '';
+  html += ROSTER.map(p => `<option value="${p.name}">${p.name} (${p.ntrp.toFixed(1)})</option>`).join('');
+  return html;
+}
+
+function addMatchEntry() {
+  matchEntryCount++;
+  const div = document.createElement('div');
+  div.style.cssText = 'background:var(--clay-mid);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative';
+  div.id = `match-entry-${matchEntryCount}`;
+  div.innerHTML = `
+    <button onclick="this.closest('[id^=match-entry]').remove()"
+      style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px">✕</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="form-group">
+        <label class="form-label">Player 1 / Team A</label>
+        <select class="form-select" style="margin-bottom:0">${rosterOpts(true)}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Player 2 / Team B</label>
+        <select class="form-select" style="margin-bottom:0">${rosterOpts(true)}</select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group">
+        <label class="form-label">Score (e.g. 6-3, 6-4)</label>
+        <input class="form-input" placeholder="6-3, 6-4" style="margin-bottom:0" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Result for Player 1</label>
+        <select class="form-select" style="margin-bottom:0">
+          <option value="win">Win</option>
+          <option value="loss">Loss</option>
+        </select>
+      </div>
+    </div>`;
+  document.getElementById('match-entries').appendChild(div);
+}
+
+// ══════════════════════════════════════
+// WEATHER — Open-Meteo (free, no key, historical+current)
+// Austin TX: lat 30.2672, lon -97.7431
+// ══════════════════════════════════════
+const WX_LAT = 30.2672, WX_LON = -97.7431;
+
+function windDir(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function wxCode(code) {
+  const map = {
+    0:'Clear',1:'Mostly Clear',2:'Partly Cloudy',3:'Overcast',
+    45:'Foggy',48:'Icy Fog',51:'Light Drizzle',53:'Drizzle',55:'Heavy Drizzle',
+    61:'Light Rain',63:'Rain',65:'Heavy Rain',71:'Light Snow',73:'Snow',75:'Heavy Snow',
+    80:'Showers',81:'Heavy Showers',82:'Violent Showers',95:'Thunderstorm',96:'Hail Storm'
+  };
+  return map[code] || 'Mixed';
+}
+
+function wxIcon(code) {
+  if (code === 0) return '☀️';
+  if (code <= 2) return '🌤️';
+  if (code === 3) return '☁️';
+  if (code <= 48) return '🌫️';
+  if (code <= 67) return '🌧️';
+  if (code <= 77) return '❄️';
+  if (code <= 82) return '🌦️';
+  return '⛈️';
+}
+
+let cachedWeather = null;
+
+async function fetchWeatherForDate(dateStr, hour) {
+  // Use historical API for past dates, forecast for future/today
+  const today = new Date().toISOString().slice(0,10);
+  const isPast = dateStr < today;
+  const url = isPast
+    ? `https://archive-api.open-meteo.com/v1/archive?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`
+    : `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  const h = data.hourly;
+  const i = Math.min(hour, h.time.length - 1);
+  return {
+    temp:      Math.round(h.temperature_2m[i]),
+    feels:     Math.round(h.apparent_temperature[i]),
+    precip:    h.precipitation[i].toFixed(2),
+    wind:      Math.round(h.windspeed_10m[i]),
+    gusts:     Math.round(h.windgusts_10m[i]),
+    windDir:   windDir(h.winddirection_10m[i]),
+    humidity:  h.relativehumidity_2m[i],
+    code:      h.weathercode[i],
+    time:      h.time[i]
+  };
+}
+
+let wxDebounce = null;
+async function previewWeather() {
+  const dateVal = document.getElementById('session-date').value;
+  const timeVal = document.getElementById('session-time').value || '09:00';
+  const preview = document.getElementById('weather-preview');
+  if (!dateVal) return;
+
+  clearTimeout(wxDebounce);
+  preview.innerHTML = `<span style="color:var(--teal);font-size:12px">⟳ Fetching Austin weather…</span>`;
+
+  wxDebounce = setTimeout(async () => {
+    try {
+      const hour = parseInt(timeVal.split(':')[0]);
+      const wx = await fetchWeatherForDate(dateVal, hour);
+      cachedWeather = wx;
+      preview.innerHTML = `
+        <span style="font-size:20px">${wxIcon(wx.code)}</span>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:500;color:var(--text)">
+            ${wx.temp}°F <span style="font-size:11px;color:var(--text-muted)">feels ${wx.feels}°F</span>
+            &nbsp;·&nbsp; ${wxCode(wx.code)}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
+            💨 Wind ${wx.wind} mph ${wx.windDir} &nbsp;·&nbsp; Gusts ${wx.gusts} mph
+            &nbsp;·&nbsp; 💧 ${wx.humidity}% humidity
+            ${parseFloat(wx.precip) > 0 ? `&nbsp;·&nbsp; 🌧 ${wx.precip}" precip` : ''}
+          </div>
+        </div>`;
+    } catch(e) {
+      preview.innerHTML = `<span style="color:var(--accent);font-size:12px">Could not fetch weather — check connection</span>`;
+    }
+  }, 500);
+}
+
+async function saveSession() {
+  const date = document.getElementById('session-date').value;
+  if (!date) { showToast('Please select a date.', true); return; }
+
+  const timeVal = document.getElementById('session-time').value || '09:00';
+  const type = document.getElementById('session-type').value;
+  const notes = document.getElementById('session-notes').value.trim();
+
+  // Fetch weather if not already cached for this date/time
+  let weather = null;
+  try {
+    const preview = document.getElementById('weather-preview');
+    preview.innerHTML = `<span style="color:var(--teal);font-size:12px">⟳ Saving weather data…</span>`;
+    const hour = parseInt(timeVal.split(':')[0]);
+    weather = cachedWeather || await fetchWeatherForDate(date, hour);
+    cachedWeather = null;
+  } catch(e) { weather = null; }
+
+  const entries = document.querySelectorAll('[id^="match-entry-"]');
+  const matches = [];
+  entries.forEach(e => {
+    const sels = e.querySelectorAll('select');
+    const scoreInput = e.querySelector('input');
+    const p1 = sels[0] ? sels[0].value : '';
+    const p2 = sels[1] ? sels[1].value : '';
+    const result = sels[2] ? sels[2].value : 'win';
+    if (p1 || p2) {
+      matches.push({
+        p1: p1 || '—',
+        p2: p2 || '—',
+        score: scoreInput ? scoreInput.value || '—' : '—',
+        result
+      });
+    }
+  });
+
+  const session = { date, time: timeVal, type, notes, matches, weather, loggedBy: 'Elan/Rohith', timestamp: Date.now() };
+  appData.practiceSessions.push(session);
+  await persistData();
+
+  showToast('Session saved with weather!');
+  clearForm();
+  renderPracticeLog();
+  renderScores();
+}
+
+function clearForm() {
+  document.getElementById('session-date').valueAsDate = new Date();
+  document.getElementById('session-time').value = '09:00';
+  document.getElementById('session-notes').value = '';
+  document.getElementById('match-entries').innerHTML = '';
+  document.getElementById('weather-preview').innerHTML = '<span style="color:var(--text-dim)">Select date &amp; time to fetch…</span>';
+  cachedWeather = null;
+  matchEntryCount = 0;
+}
+
+async function deleteSession(idx) {
+  if (!confirm('Delete this session?')) return;
+  appData.practiceSessions.splice(idx, 1);
+  await persistData();
+  renderPracticeLog();
+  renderScores();
+  showToast('Session deleted.');
+}
+
+// ══════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════
+let toastTimer;
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.classList.remove('show'); }, 3000);
+}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+async function initApp() {
+  await loadData();
+  document.getElementById('session-date').valueAsDate = new Date();
+  renderRoster();
+  renderScores();
+  renderLines();
+  renderCombos();
+  renderPracticeLog();
+  previewWeather();
+}
+</script>
+</body>
+</html>
