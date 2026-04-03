@@ -1909,69 +1909,129 @@ async function refreshCombos() {
 // ══════════════════════════════════════
 // RENDER PRACTICE LOG
 // ══════════════════════════════════════
+function renderPracticeMatch(m) {
+  // Reuse parseSets from scores tab
+  const sets = parseSets(m.score, m.result);
+  const isWin = m.result === 'win';
+  const isSingles = m.type === 'singles';
+
+  // Set columns — same design as season scorecard but slightly compact
+  let setCols = '';
+  if (!sets.length || m.score === '—') {
+    setCols = '<div class="set-col"><div class="set-score" style="font-size:12px;color:var(--text-dim)">—</div></div>';
+  } else {
+    setCols = sets.map((s, i) => {
+      const ourWon = s.our > s.their;
+      const label  = s.isTiebreak ? 'TB' : ('S' + (i+1));
+      return '<div class="set-col' + (s.isTiebreak ? ' tiebreak' : '') + '">' +
+        '<div class="set-label">' + label + '</div>' +
+        '<div class="set-score ' + (ourWon ? 'winner' : 'loser') + '" style="font-size:17px">' + s.our + '</div>' +
+        '<div class="set-score ' + (!ourWon ? 'winner' : 'loser') + '" style="font-size:17px">' + s.their + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  let ourSets = sets.filter(s => s.our > s.their).length;
+  let theirSets = sets.filter(s => s.their > s.our).length;
+
+  const typeTag = '<span style="font-size:10px;padding:2px 8px;border-radius:100px;background:' +
+    (isSingles ? 'rgba(233,69,96,0.12)' : 'rgba(0,180,216,0.12)') + ';color:' +
+    (isSingles ? 'var(--accent)' : 'var(--teal)') + ';border:1px solid ' +
+    (isSingles ? 'rgba(233,69,96,0.2)' : 'rgba(0,180,216,0.2)') + '">' +
+    (isSingles ? 'Singles' : 'Doubles') + '</span>';
+
+  return '<div class="scorecard ' + (isWin ? 'win' : 'loss') + '" style="margin-bottom:8px">' +
+    '<div class="scorecard-body">' +
+      '<div class="scorecard-players" style="padding:10px 14px;gap:8px">' +
+        '<div class="scorecard-row">' +
+          '<div class="serve-dot ' + (isWin ? 'show' : '') + '"></div>' +
+          '<div class="player-name ' + (isWin ? 'winner' : 'loser') + '" style="font-size:13px">' + (m.p1||'—') + '</div>' +
+          typeTag +
+        '</div>' +
+        '<div class="scorecard-row">' +
+          '<div class="serve-dot ' + (!isWin ? 'show' : '') + '"></div>' +
+          '<div class="player-name ' + (!isWin ? 'winner' : 'loser') + '" style="font-size:13px">' + (m.p2||'—') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="scorecard-sets">' +
+        setCols +
+        '<div class="result-col" style="min-width:44px;padding:8px 6px">' +
+          '<div class="result-badge ' + (isWin ? 'win' : 'loss') + '" style="font-size:12px;padding:3px 8px">' + (isWin ? 'W' : 'L') + '</div>' +
+          (sets.length ? '<div class="sets-won-badge">' + ourSets + '–' + theirSets + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderPracticeLog() {
   const container = document.getElementById('practice-log-list');
-  const sessions = [...appData.practiceSessions].reverse();
+  const sessions  = [...(appData.practiceSessions || [])].reverse();
 
   if (!sessions.length) {
-    container.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">📋</div>
-      <div class="empty-title">No sessions logged yet</div>
-      <div class="empty-sub">Use the "Log Session" tab to record practice scores</div>
-    </div>`;
+    container.innerHTML = '<div class="empty-state">' +
+      '<div class="empty-icon">&#128203;</div>' +
+      '<div class="empty-title">No sessions logged yet</div>' +
+      '<div class="empty-sub">Use the "Log Session" tab to record practice scores</div>' +
+    '</div>';
     return;
   }
 
   container.innerHTML = sessions.map((s, ridx) => {
     const realIdx = appData.practiceSessions.length - 1 - ridx;
-    const matchesHtml = s.matches && s.matches.length
-      ? `<div class="session-matches">${s.matches.map(m => `
-          <div class="match-chip">
-            ${m.label ? `<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:${m.type==='doubles'?'rgba(0,180,216,0.12)':'rgba(233,69,96,0.12)'};color:${m.type==='doubles'?'var(--teal)':'var(--accent)'}">${m.label}</span>` : ''}
-            <span style="font-weight:500">${m.p1}</span>
-            <span style="color:var(--text-dim);font-size:11px">vs</span>
-            <span style="font-weight:500">${m.p2}</span>
-            <span class="score ${m.result==='loss'?'loss':''}">${m.score}</span>
-            <span style="font-size:11px;color:${m.result==='loss'?'var(--accent)':'var(--success)'}">${m.result==='win'?'W':'L'}</span>
-          </div>`).join('')}</div>`
-      : `<div style="font-size:12px;color:var(--text-dim);margin-top:8px">No match scores recorded</div>`;
 
-    const notesHtml = s.notes ? `<div class="session-notes">${s.notes}</div>` : '';
-
+    // ── Weather strip ──
     let weatherHtml = '';
     if (s.weather) {
       const wx = s.weather;
-      weatherHtml = `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:rgba(45,122,79,0.07);border:1px solid rgba(45,122,79,0.15);border-radius:8px;flex-wrap:wrap;">
-        <span style="font-size:18px">${wxIcon(wx.code)}</span>
-        <span style="font-size:13px;font-weight:500;color:var(--text)">${wx.temp}°F</span>
-        <span style="font-size:12px;color:var(--text-muted)">feels ${wx.feels}°F</span>
-        <span style="font-size:11px;color:var(--teal)">${wxCode(wx.code)}</span>
-        <span style="font-size:12px;color:var(--text-muted)">·</span>
-        <span style="font-size:12px;color:var(--text-muted)">💨 ${wx.wind} mph ${wx.windDir}</span>
-        <span style="font-size:12px;color:var(--text-muted)">Gusts ${wx.gusts} mph</span>
-        <span style="font-size:12px;color:var(--text-muted)">·</span>
-        <span style="font-size:12px;color:var(--text-muted)">💧 ${wx.humidity}%</span>
-        ${parseFloat(wx.precip) > 0 ? `<span style="font-size:12px;color:var(--warning)">🌧 ${wx.precip}" rain</span>` : ''}
-        <span style="font-size:11px;color:var(--text-dim);margin-left:auto">Austin, TX · ${s.time||''}</span>
-      </div>`;
+      weatherHtml =
+        '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;' +
+        'background:rgba(0,180,216,0.06);border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+          '<span style="font-size:16px">' + wxIcon(wx.code) + '</span>' +
+          '<span style="font-size:13px;font-weight:500;color:var(--text)">' + wx.temp + '°F</span>' +
+          '<span style="font-size:12px;color:var(--text-muted)">feels ' + wx.feels + '°F · ' + wxCode(wx.code) + '</span>' +
+          '<span style="font-size:12px;color:var(--text-muted)">&#128168; ' + wx.wind + ' mph ' + wx.windDir + ' · gusts ' + wx.gusts + ' mph</span>' +
+          '<span style="font-size:12px;color:var(--text-muted)">&#128167; ' + wx.humidity + '%</span>' +
+          (parseFloat(wx.precip) > 0 ? '<span style="font-size:12px;color:var(--warning)">&#127783; ' + wx.precip + '"</span>' : '') +
+          '<span style="font-size:11px;color:var(--text-dim);margin-left:auto">Austin, TX · ' + (s.time||'') + '</span>' +
+        '</div>';
     }
 
-    return `<div class="session-item">
-      <div class="session-meta">
-        <span class="session-date">${s.date}</span>
-        ${s.time ? `<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim)">${s.time}</span>` : ''}
-        <span class="session-type">${s.type}</span>
-        <span style="font-size:12px;color:var(--text-dim);margin-left:4px">logged by ${s.loggedBy||'Team'}</span>
-        <button class="delete-btn" onclick="deleteSession(${realIdx})" title="Delete session">✕</button>
-      </div>
-      ${weatherHtml}
-      ${matchesHtml}
-      ${notesHtml}
-    </div>`;
+    // ── Match scorecards ──
+    const matches = s.matches || [];
+    let matchesHtml = '';
+    if (matches.length) {
+      matchesHtml = '<div style="padding:10px 14px;display:flex;flex-direction:column;gap:0">' +
+        matches.map(m => renderPracticeMatch(m)).join('') +
+      '</div>';
+    } else {
+      matchesHtml = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">No match scores recorded</div>';
+    }
+
+    // ── Notes ──
+    const notesHtml = s.notes
+      ? '<div style="margin:0 14px 12px;font-size:13px;color:var(--text-muted);font-style:italic;' +
+        'border-left:2px solid var(--accent);padding-left:12px">' + s.notes + '</div>'
+      : '';
+
+    return '<div class="session-item" style="padding:0;overflow:hidden">' +
+      // Session header
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">' +
+        '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--teal)">' + s.date + '</span>' +
+        (s.time ? '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">' + s.time + '</span>' : '') +
+        '<span style="font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(245,166,35,0.12);color:var(--warning)">' + (s.type||'Practice') + '</span>' +
+        '<span style="font-size:11px;color:var(--text-dim)">' + (matches.length) + ' match' + (matches.length!==1?'es':'') + '</span>' +
+        '<button onclick="deleteSession(' + realIdx + ')" style="margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 4px" title="Delete session">✕</button>' +
+      '</div>' +
+      weatherHtml +
+      matchesHtml +
+      notesHtml +
+    '</div>';
   }).join('');
 
   document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
 }
+
 
 // ══════════════════════════════════════
 // SESSION FORM
