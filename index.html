@@ -683,6 +683,114 @@
   .empty-title { font-family: 'Unbounded', sans-serif; font-size: 15px; margin-bottom: 8px; }
   .empty-sub { font-size: 13px; color: var(--text-dim); }
 
+  /* ── TENNIS SCORECARD ── */
+  .scorecard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  .scorecard:hover { border-color: rgba(255,255,255,0.15); }
+  .scorecard.win  { border-left: 3px solid var(--success); }
+  .scorecard.loss { border-left: 3px solid var(--accent); }
+
+  .scorecard-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim);
+    gap: 12px;
+  }
+
+  .scorecard-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .scorecard-date { font-family: var(--font-mono,monospace); color: var(--teal); font-size: 11px; }
+  .scorecard-line {
+    font-size: 10px; padding: 2px 8px; border-radius: 100px;
+    background: rgba(0,180,216,0.1); color: var(--teal);
+    border: 1px solid rgba(0,180,216,0.2);
+  }
+
+  .scorecard-body {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: stretch;
+  }
+
+  .scorecard-players { padding: 12px 16px; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+
+  .scorecard-row {
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .player-name {
+    font-size: 14px; font-weight: 500;
+    min-width: 0; flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .player-name.winner { color: var(--text); }
+  .player-name.loser  { color: var(--text-muted); }
+
+  .serve-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); flex-shrink: 0;
+    visibility: hidden;
+  }
+  .serve-dot.show { visibility: visible; }
+
+  /* Set score columns */
+  .scorecard-sets {
+    display: flex; align-items: stretch;
+    border-left: 1px solid var(--border);
+  }
+
+  .set-col {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: space-around;
+    border-right: 1px solid var(--border);
+    min-width: 44px; padding: 10px 4px;
+    gap: 10px;
+  }
+  .set-col:last-child { border-right: none; }
+  .set-col.tiebreak { min-width: 54px; }
+
+  .set-label {
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 2px; text-align: center;
+  }
+
+  .set-score {
+    font-family: var(--font-mono,monospace);
+    font-size: 20px; font-weight: 500;
+    text-align: center; line-height: 1;
+  }
+  .set-score.winner { color: var(--text); }
+  .set-score.loser  { color: var(--text-dim); }
+  .set-score.tiebreak-num { font-size: 13px; color: var(--text-muted); }
+
+  .result-col {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-width: 52px; padding: 10px 8px;
+    gap: 6px;
+  }
+
+  .result-badge {
+    font-family: var(--font-sans,sans-serif);
+    font-size: 13px; font-weight: 600;
+    padding: 4px 10px; border-radius: 6px;
+    letter-spacing: .05em;
+  }
+  .result-badge.win  { background: rgba(0,200,150,0.15); color: var(--success); }
+  .result-badge.loss { background: rgba(233,69,96,0.15);  color: var(--accent); }
+
+  .sets-won-badge {
+    font-size: 10px; color: var(--text-dim);
+    text-align: center; line-height: 1.3;
+  }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 600px) {
     .main { padding: 20px 16px; }
@@ -728,6 +836,10 @@
     </div>
     <div class="header-right">
       <div id="sync-badge" style="font-size:11px;color:var(--teal);opacity:0;transition:opacity 0.5s;padding:4px 10px;background:rgba(0,180,216,0.1);border-radius:100px;border:1px solid rgba(0,180,216,0.2)"></div>
+      <div id="firebase-status" style="font-size:11px;padding:4px 12px;border-radius:100px;border:1px solid var(--border);color:var(--text-dim);display:flex;align-items:center;gap:6px;transition:all 0.3s">
+        <span id="firebase-status-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text-dim);flex-shrink:0"></span>
+        <span id="firebase-status-text">Connecting…</span>
+      </div>
       <div class="user-chip">
         <div class="user-avatar" id="user-avatar">?</div>
         <span id="user-label">—</span>
@@ -754,6 +866,7 @@
           <div class="section-title">Season Scores</div>
           <div class="section-subtitle">USTA Spring Adult 18+ WeekEND · 2026</div>
         </div>
+        <button class="btn-primary" onclick="openAddMatchModal()">+ Add Match</button>
       </div>
 
       <div class="stats-grid">
@@ -779,25 +892,45 @@
         </div>
       </div>
 
-      <div class="table-card">
-        <div class="table-header">Match History</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Opponent</th>
-              <th>Line</th>
-              <th>Players</th>
-              <th>Score</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody id="scores-body">
-            <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:32px">
-              Loading scores…
-            </td></tr>
-          </tbody>
-        </table>
+      <div id="scores-body"></div>
+
+      <!-- Add Match Modal -->
+      <div id="add-match-modal" style="display:none;margin-top:16px">
+        <div class="form-card" style="border:1px solid rgba(0,180,216,0.3)">
+          <div style="font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;color:var(--teal);margin-bottom:20px;letter-spacing:.05em">NEW MATCH RESULT</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input class="form-input" type="date" id="match-date" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Line</label>
+              <select class="form-select" id="match-line">
+                <option value="Singles 1">Singles — Line 1</option>
+                <option value="Singles 2">Singles — Line 2</option>
+                <option value="Doubles 1">Doubles — Line 1</option>
+                <option value="Doubles 2">Doubles — Line 2</option>
+                <option value="Doubles 3">Doubles — Line 3</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Our Player(s)</label>
+              <input class="form-input" id="match-players" placeholder="e.g. Elan / Elan &amp; Rohith" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Opponent(s)</label>
+              <input class="form-input" id="match-opponent" placeholder="e.g. Smith / Smith &amp; Jones" />
+            </div>
+            <div class="form-group full">
+              <label class="form-label">Score — enter each set separated by comma (e.g. 6-3, 7-5 or 4-6, 6-3, 10-7)</label>
+              <input class="form-input" id="match-score" placeholder="6-3, 7-5" />
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-primary" onclick="saveMatchResult()">Save Match →</button>
+            <button class="btn-secondary" onclick="document.getElementById('add-match-modal').style.display='none'">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1061,35 +1194,52 @@ function mergeDefaults(data) {
 }
 
 async function loadData() {
+  setFirebaseStatus('connecting');
   try {
     const remote = await fsGet();
     if (remote) {
       appData = mergeDefaults(remote);
     } else {
-      // First ever load — seed with defaults
       appData = JSON.parse(JSON.stringify(DEFAULT_DATA));
       await fsSave(appData);
     }
-    // Mirror to localStorage as offline cache
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-    // Start polling every 10s to pick up changes from other devices
+    setFirebaseStatus('live');
     startPolling();
   } catch(e) {
     console.warn('Firestore unavailable, using localStorage cache:', e);
     const raw = localStorage.getItem(STORAGE_KEY);
     appData = raw ? mergeDefaults(JSON.parse(raw)) : JSON.parse(JSON.stringify(DEFAULT_DATA));
+    const isPermission = String(e).includes('403') || String(e).includes('permission');
+    const isNetwork    = String(e).includes('fetch') || String(e).includes('network') || String(e).includes('Failed');
+    const isApiKey     = String(e).includes('400') || String(e).includes('API key');
+    let detail = 'Sync error';
+    if (isPermission) detail = 'Permission denied — check Firestore rules';
+    else if (isApiKey) detail = 'API key error — check key restrictions';
+    else if (isNetwork) detail = 'Network error — working offline';
+    setFirebaseStatus('error', detail);
+    showToast(detail, true);
   }
 }
 
 async function persistData() {
-  // Save to localStorage immediately for instant local persistence
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); } catch(e) {}
   _lastSaveTime = Date.now();
-  // Push to Firestore
+  setFirebaseStatus('saving');
   try {
     await fsSave(appData);
+    setFirebaseStatus('saved');
   } catch(e) {
-    console.warn('Firestore save failed (data still in localStorage):', e);
+    console.warn('Firestore save failed:', e);
+    const isPermission = String(e).includes('403') || String(e).includes('permission');
+    const isApiKey     = String(e).includes('400') || String(e).includes('API key');
+    const isNetwork    = String(e).includes('fetch') || String(e).includes('network') || String(e).includes('Failed');
+    let detail = 'Save failed — stored locally only';
+    if (isPermission) detail = 'Permission denied — check Firestore rules';
+    else if (isApiKey) detail = 'API key rejected — check domain restrictions';
+    else if (isNetwork) detail = 'No connection — saved locally';
+    setFirebaseStatus('error', detail);
+    showToast(detail, true);
   }
 }
 
@@ -1110,7 +1260,11 @@ function startPolling() {
         renderScores(); renderLines(); renderCombos(); renderPracticeLog();
         showSyncBadge();
       }
-    } catch(e) { /* silent — offline */ }
+      setFirebaseStatus('live');
+    } catch(e) {
+      const isNetwork = String(e).includes('fetch') || String(e).includes('Failed') || String(e).includes('network');
+      setFirebaseStatus(isNetwork ? 'offline' : 'error', isNetwork ? 'No connection — working offline' : 'Sync error');
+    }
   }, 10000);
 }
 
@@ -1120,6 +1274,34 @@ function showSyncBadge() {
   badge.textContent = '⟳ Synced from another device';
   badge.style.opacity = '1';
   setTimeout(() => { badge.style.opacity = '0'; }, 3000);
+}
+
+// ── Firebase connection status ──
+function setFirebaseStatus(state, detail) {
+  const dot  = document.getElementById('firebase-status-dot');
+  const text = document.getElementById('firebase-status-text');
+  const wrap = document.getElementById('firebase-status');
+  if (!dot || !text || !wrap) return;
+
+  const states = {
+    connecting: { color: 'var(--warning)',  bg: 'rgba(245,166,35,0.1)',  border: 'rgba(245,166,35,0.3)',  label: 'Connecting…'   },
+    live:       { color: 'var(--success)',  bg: 'rgba(0,200,150,0.1)',   border: 'rgba(0,200,150,0.3)',   label: 'Live'          },
+    offline:    { color: 'var(--text-dim)', bg: 'rgba(90,106,122,0.1)',  border: 'rgba(90,106,122,0.3)',  label: 'Offline (local)' },
+    error:      { color: 'var(--accent)',   bg: 'rgba(233,69,96,0.1)',   border: 'rgba(233,69,96,0.3)',   label: detail || 'Sync error' },
+    saving:     { color: 'var(--teal)',     bg: 'rgba(0,180,216,0.1)',   border: 'rgba(0,180,216,0.3)',   label: 'Saving…'       },
+    saved:      { color: 'var(--success)',  bg: 'rgba(0,200,150,0.1)',   border: 'rgba(0,200,150,0.3)',   label: 'Saved ✓'       },
+  };
+  const s = states[state] || states.offline;
+  dot.style.background   = s.color;
+  text.textContent       = s.label;
+  wrap.style.background  = s.bg;
+  wrap.style.borderColor = s.border;
+  wrap.style.color       = s.color;
+
+  // Auto-revert 'saved' back to 'live' after 2s
+  if (state === 'saved') {
+    setTimeout(() => setFirebaseStatus('live'), 2000);
+  }
 }
 
 // ══════════════════════════════════════
@@ -1171,31 +1353,167 @@ function switchTab(id) {
 // ══════════════════════════════════════
 // RENDER SCORES
 // ══════════════════════════════════════
+
+// Parse "6-3, 7-5" or "4-6, 6-3, 10-7" into set objects
+function parseSets(scoreStr, result) {
+  if (!scoreStr || scoreStr === '—') return [];
+  const sets = scoreStr.split(',').map(s => s.trim());
+  return sets.map((s, i) => {
+    const parts = s.split('-').map(x => parseInt(x.trim(), 10));
+    if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+    const [a, b] = parts;
+    const ourScore  = result === 'win' ? Math.max(a,b) : Math.min(a,b);
+    const theirScore = result === 'win' ? Math.min(a,b) : Math.max(a,b);
+    const isTiebreak = (ourScore <= 1 && theirScore <= 1) ||
+                       ourScore === 10 || theirScore === 10 ||
+                       (i === sets.length - 1 && sets.length === 3 && Math.max(ourScore,theirScore) <= 12 && Math.abs(ourScore-theirScore) >= 1 && Math.max(ourScore,theirScore) < 6);
+    return { our: ourScore, their: theirScore, isTiebreak };
+  }).filter(Boolean);
+}
+
+function renderScorecard(m, idx) {
+  const sets = parseSets(m.score, m.result);
+  const isWin = m.result === 'win';
+
+  // Count sets won/lost
+  let ourSets = 0, theirSets = 0;
+  sets.forEach(s => { if (s.our > s.their) ourSets++; else theirSets++; });
+
+  // Build set columns HTML
+  let setColsOur = '', setColsTheir = '';
+  if (sets.length === 0) {
+    setColsOur   = '<div class="set-col"><div class="set-score" style="font-size:13px;color:var(--text-dim)">—</div></div>';
+    setColsTheir = '<div class="set-col"><div class="set-score" style="font-size:13px;color:var(--text-dim)">—</div></div>';
+  } else {
+    sets.forEach((s, i) => {
+      const ourWon   = s.our > s.their;
+      const label    = s.isTiebreak ? 'TB' : ('Set ' + (i+1));
+      const colClass = s.isTiebreak ? 'set-col tiebreak' : 'set-col';
+      setColsOur   += '<div class="' + colClass + '">' +
+        (i === 0 ? '<div class="set-label">' + label + '</div>' : '<div class="set-label">' + label + '</div>') +
+        '<div class="set-score ' + (ourWon ? 'winner' : 'loser') + '">' + s.our + '</div>' +
+      '</div>';
+      setColsTheir += '<div class="' + colClass + '">' +
+        '<div class="set-label">&nbsp;</div>' +
+        '<div class="set-score ' + (!ourWon ? 'winner' : 'loser') + '">' + s.their + '</div>' +
+      '</div>';
+    });
+  }
+
+  // Result col
+  const resultCol =
+    '<div class="result-col">' +
+      '<div class="result-badge ' + (isWin ? 'win' : 'loss') + '">' + (isWin ? 'W' : 'L') + '</div>' +
+      '<div class="sets-won-badge">' + ourSets + '–' + theirSets + '<br><span style="font-size:9px">sets</span></div>' +
+    '</div>';
+
+  const lineType = (m.line || '').toLowerCase().includes('singles') ? 'singles' : 'doubles';
+
+  return '<div class="scorecard ' + (isWin ? 'win' : 'loss') + '">' +
+    // Header row
+    '<div class="scorecard-header">' +
+      '<div class="scorecard-meta">' +
+        '<span class="scorecard-date">' + (m.date||'') + '</span>' +
+        '<span class="scorecard-line">' + (m.line||'') + '</span>' +
+      '</div>' +
+      '<button onclick="deleteMatchResult(' + idx + ')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1" title="Delete">✕</button>' +
+    '</div>' +
+    // Body: players + sets
+    '<div class="scorecard-body">' +
+      '<div class="scorecard-players">' +
+        // Our team row
+        '<div class="scorecard-row">' +
+          '<div class="serve-dot ' + (isWin ? 'show' : '') + '"></div>' +
+          '<div class="player-name ' + (isWin ? 'winner' : 'loser') + '">' + (m.players || 'Baseline Authority') + '</div>' +
+        '</div>' +
+        // Their team row
+        '<div class="scorecard-row">' +
+          '<div class="serve-dot ' + (!isWin ? 'show' : '') + '"></div>' +
+          '<div class="player-name ' + (!isWin ? 'winner' : 'loser') + '">' + (m.opponent || 'Opponent') + '</div>' +
+        '</div>' +
+      '</div>' +
+      // Set scores
+      '<div class="scorecard-sets">' +
+        // Our scores row + their scores row stacked per set
+        (() => {
+          if (sets.length === 0) return '<div class="set-col"><div style="padding:16px;color:var(--text-dim);font-size:12px">No score</div></div>';
+          return sets.map((s, i) => {
+            const ourWon = s.our > s.their;
+            const label = s.isTiebreak ? 'TB' : 'S' + (i+1);
+            return '<div class="set-col' + (s.isTiebreak ? ' tiebreak' : '') + '">' +
+              '<div class="set-label">' + label + '</div>' +
+              '<div class="set-score ' + (ourWon ? 'winner' : 'loser') + '">' + s.our + '</div>' +
+              '<div class="set-score ' + (!ourWon ? 'winner' : 'loser') + '">' + s.their + '</div>' +
+            '</div>';
+          }).join('');
+        })() +
+        resultCol +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderScores() {
-  const tbody = document.getElementById('scores-body');
-  const all = appData.matchHistory;
+  const container = document.getElementById('scores-body');
+  const all = (appData.matchHistory || []);
+
+  const wins   = all.filter(m => m.result === 'win').length;
+  const losses = all.filter(m => m.result === 'loss').length;
+  document.getElementById('stat-wins').textContent    = wins;
+  document.getElementById('stat-losses').textContent  = losses;
+  document.getElementById('stat-rate').textContent    = all.length ? Math.round(wins/all.length*100) + '%' : '—';
+  document.getElementById('stat-sessions').textContent = (appData.practiceSessions || []).length;
+
   if (!all.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div></div></td></tr>`;
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div><div class="empty-sub">Hit "+ Add Match" to log your first result</div></div>';
     return;
   }
-  const wins = all.filter(m => m.result === 'win').length;
-  const losses = all.filter(m => m.result === 'loss').length;
-  document.getElementById('stat-wins').textContent = wins;
-  document.getElementById('stat-losses').textContent = losses;
-  document.getElementById('stat-rate').textContent = all.length ? Math.round(wins/all.length*100) + '%' : '—';
-  document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
 
-  tbody.innerHTML = all.map(m => `
-    <tr>
-      <td style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--teal)">${m.date}</td>
-      <td style="font-weight:500">${m.opponent}</td>
-      <td><span class="pill pill-player">${m.line}</span></td>
-      <td style="font-size:13px;color:var(--text-muted)">${m.players}</td>
-      <td style="font-family:var(--font-mono,monospace);font-size:13px">${m.score}</td>
-      <td><span class="pill ${m.result==='win'?'pill-win':'pill-loss'}">${m.result==='win'?'W':'L'}</span></td>
-    </tr>
-  `).join('');
+  // Sort newest first
+  const sorted = [...all].reverse();
+  container.innerHTML = sorted.map((m, i) => renderScorecard(m, all.length - 1 - i)).join('');
 }
+
+// ── Add / delete match results ──
+function openAddMatchModal() {
+  const modal = document.getElementById('add-match-modal');
+  modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('match-date').valueAsDate = new Date();
+}
+
+async function saveMatchResult() {
+  const date     = document.getElementById('match-date').value;
+  const line     = document.getElementById('match-line').value;
+  const players  = document.getElementById('match-players').value.trim();
+  const opponent = document.getElementById('match-opponent').value.trim();
+  const score    = document.getElementById('match-score').value.trim();
+  if (!date || !score) { showToast('Date and score are required.', true); return; }
+  const result = (() => {
+    const sets = parseSets(score, 'win');
+    if (!sets.length) return 'win';
+    const ourSets = sets.filter(s => s.our > s.their).length;
+    const theirSets = sets.filter(s => s.their > s.our).length;
+    return ourSets > theirSets ? 'win' : 'loss';
+  })();
+  if (!appData.matchHistory) appData.matchHistory = [];
+  appData.matchHistory.push({ date, line, players, opponent, score, result });
+  await persistData();
+  renderScores();
+  document.getElementById('add-match-modal').style.display = 'none';
+  document.getElementById('match-players').value  = '';
+  document.getElementById('match-opponent').value = '';
+  document.getElementById('match-score').value    = '';
+  showToast('Match result saved!');
+}
+
+async function deleteMatchResult(idx) {
+  if (!confirm('Delete this match result?')) return;
+  appData.matchHistory.splice(idx, 1);
+  await persistData();
+  renderScores();
+  showToast('Match deleted.');
+}
+
 
 // ══════════════════════════════════════
 // RENDER ROSTER
