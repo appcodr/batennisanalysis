@@ -817,41 +817,76 @@
   #player-app { display: none; position: relative; z-index: 1; min-height: 100vh; }
 
   /* ── AVAILABILITY GRID ── */
-  .avail-grid {
-    display: grid;
-    grid-template-columns: 120px repeat(7, 1fr);
-    gap: 4px;
-    margin-bottom: 24px;
+  .avail-table-wrap {
+    overflow-x: auto; margin-bottom: 24px;
   }
 
-  .avail-header {
+  .avail-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    min-width: 680px;
+  }
+
+  .avail-table th {
     font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-    color: var(--text-dim); text-align: center; padding: 6px 0;
+    color: var(--text-dim); text-align: center; padding: 8px 6px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
 
-  .avail-player-name {
+  .avail-table th.match-date { min-width: 80px; }
+  .avail-table th:first-child { text-align: left; padding-left: 14px; min-width: 160px; }
+
+  .avail-table td {
+    text-align: center; padding: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .avail-table td:first-child {
+    text-align: left; padding: 8px 14px;
     font-size: 13px; font-weight: 500; color: var(--text);
-    display: flex; align-items: center; padding: 4px 8px;
-    background: var(--surface); border-radius: 6px;
+  }
+  .avail-table tr:last-child td { border-bottom: none; }
+  .avail-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .avail-table tr.me td:first-child { color: var(--teal); }
+
+  .avail-pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 5px 0; border-radius: 6px; font-size: 11px; font-weight: 500;
+    width: 72px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-dim);
+    transition: all 0.15s; white-space: nowrap;
   }
 
-  .avail-cell {
-    height: 40px; border-radius: 6px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; transition: all 0.15s; border: 1px solid var(--border);
-    background: var(--surface);
+  .avail-pill.yes         { background: rgba(0,200,150,0.18); border-color: rgba(0,200,150,0.4); color: var(--success); }
+  .avail-pill.no          { background: rgba(233,69,96,0.10);  border-color: rgba(233,69,96,0.25); color: var(--accent); opacity:0.7; }
+  .avail-pill.last-resort { background: rgba(245,166,35,0.18); border-color: rgba(245,166,35,0.4); color: var(--warning); }
+
+  .avail-pill.clickable   { cursor: pointer; }
+  .avail-pill.clickable:hover { filter: brightness(1.25); transform: scale(1.04); }
+
+  .avail-summary {
+    display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .avail-summary-chip {
+    font-size: 11px; padding: 4px 10px; border-radius: 100px;
+    border: 1px solid var(--border); color: var(--text-muted);
   }
 
-  .avail-cell.available    { background: rgba(0,200,150,0.18); border-color: rgba(0,200,150,0.4); }
-  .avail-cell.maybe        { background: rgba(245,166,35,0.18); border-color: rgba(245,166,35,0.4); }
-  .avail-cell.unavailable  { background: rgba(233,69,96,0.12);  border-color: rgba(233,69,96,0.3); opacity:0.5; }
-  .avail-cell.mine         { cursor: pointer; }
-  .avail-cell.mine:hover   { filter: brightness(1.2); transform: scale(1.05); }
-  .avail-cell.others       { cursor: default; }
+  .practice-week-btn {
+    font-size: 11px; padding: 5px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+    font-family: var(--font-sans, sans-serif);
+  }
+  .practice-week-btn:hover { border-color: rgba(0,180,216,0.4); color: var(--teal); }
+  .practice-week-btn.active {
+    background: rgba(0,180,216,0.12); border-color: rgba(0,180,216,0.4);
+    color: var(--teal); font-weight: 500;
+  }
 
   .avail-legend {
-    display: flex; gap: 16px; flex-wrap: wrap;
+    display: flex; gap: 14px; flex-wrap: wrap;
     font-size: 12px; color: var(--text-muted); margin-bottom: 16px;
+    align-items: center;
   }
   .avail-legend span { display: flex; align-items: center; gap: 5px; }
 
@@ -1215,55 +1250,56 @@
   </header>
 
   <div class="nav-tabs" id="player-nav-tabs">
-    <button class="nav-tab active" onclick="switchPlayerTab('availability')">My Availability</button>
-    <button class="nav-tab" onclick="switchPlayerTab('team-avail')">Team View</button>
+    <button class="nav-tab active" onclick="switchPlayerTab('availability')">Match Availability</button>
+    <button class="nav-tab" onclick="switchPlayerTab('practice-avail')">Practice Availability</button>
     <button class="nav-tab" onclick="switchPlayerTab('my-lines')">My Lines</button>
     <button class="nav-tab" onclick="switchPlayerTab('schedule')">Schedule</button>
   </div>
 
   <div class="main">
 
-    <!-- ── MY AVAILABILITY ── -->
+    <!-- ── AVAILABILITY (unified: all players, match Sundays only) ── -->
     <div class="tab-panel active" id="player-panel-availability">
       <div class="section-header">
         <div>
-          <div class="section-title">My Availability</div>
-          <div class="section-subtitle" id="avail-week-label">This week</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn-secondary" onclick="changeWeek(-1)">← Prev</button>
-          <button class="btn-secondary" onclick="changeWeek(1)">Next →</button>
+          <div class="section-title">Team Availability</div>
+          <div class="section-subtitle">Match Sundays · Apr 19 – Jun 14, 2026</div>
         </div>
       </div>
       <div class="avail-legend">
-        <span><span style="font-size:16px">✅</span> Available</span>
-        <span><span style="font-size:16px">🟡</span> Maybe</span>
-        <span><span style="font-size:16px">❌</span> Unavailable</span>
-        <span style="color:var(--text-dim);font-size:11px">Tap a cell to toggle</span>
+        <span><span class="avail-pill yes" style="width:auto;padding:3px 10px">Yes</span> Available</span>
+        <span><span class="avail-pill last-resort" style="width:auto;padding:3px 10px">Last Resort</span> If needed</span>
+        <span><span class="avail-pill no" style="width:auto;padding:3px 10px">No</span> Unavailable</span>
+        <span style="font-size:11px;color:var(--text-dim)">· Tap your row to update · Others are read-only</span>
       </div>
-      <div id="my-avail-grid"></div>
-      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Changes save automatically</div>
+      <div class="avail-table-wrap">
+        <div id="avail-grid-container"></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Changes save automatically to Firebase</div>
     </div>
 
-    <!-- ── TEAM AVAILABILITY ── -->
-    <div class="tab-panel" id="player-panel-team-avail">
+    <!-- team-avail kept as hidden stub so switchPlayerTab does not break -->
+    <div class="tab-panel" id="player-panel-team-avail" style="display:none"></div>
+
+    <!-- ── PRACTICE AVAILABILITY ── -->
+    <div class="tab-panel" id="player-panel-practice-avail">
       <div class="section-header">
         <div>
-          <div class="section-title">Team Availability</div>
-          <div class="section-subtitle" id="team-avail-week-label">This week</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn-secondary" onclick="changeWeek(-1)">← Prev</button>
-          <button class="btn-secondary" onclick="changeWeek(1)">Next →</button>
+          <div class="section-title">Practice Availability</div>
+          <div class="section-subtitle">Weekdays · Apr 20 – Jun 12, 2026</div>
         </div>
       </div>
       <div class="avail-legend">
-        <span><span style="font-size:16px">✅</span> Available</span>
-        <span><span style="font-size:16px">🟡</span> Maybe</span>
-        <span><span style="font-size:16px">❌</span> Unavailable</span>
-        <span style="color:var(--text-dim);font-size:11px">⬜ Not set</span>
+        <span><span class="avail-pill yes" style="width:auto;padding:3px 10px">Yes</span> Available</span>
+        <span><span class="avail-pill last-resort" style="width:auto;padding:3px 10px">Last Resort</span> If needed</span>
+        <span><span class="avail-pill no" style="width:auto;padding:3px 10px">No</span> Unavailable</span>
+        <span style="font-size:11px;color:var(--text-dim)">· Tap your row · Default is No</span>
       </div>
-      <div id="team-avail-grid"></div>
+      <div id="practice-week-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px"></div>
+      <div class="avail-table-wrap">
+        <div id="practice-avail-grid"></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Changes save automatically</div>
     </div>
 
     <!-- ── MY LINES ── -->
@@ -2681,10 +2717,12 @@ async function handlePlayerLogin(email, name, picture) {
     document.getElementById('player-avatar').textContent = initials;
     setPlayerStatus('Live');
 
-    // Init player views
-    currentWeekOffset = 0;
-    await renderMyAvailGrid();
-    await renderTeamAvailGrid();
+    // Init player views — auto-jump to current week for practice
+    const todayStr = new Date().toISOString().slice(0,10);
+    currentPracticeWeek = Math.max(0,
+      PRACTICE_DAYS.findIndex(w => w[w.length-1] >= todayStr));
+    if (currentPracticeWeek < 0) currentPracticeWeek = PRACTICE_DAYS.length - 1;
+    await renderAvailGrid();
     renderMyLines();
 
   } catch(e) {
@@ -2716,185 +2754,261 @@ function playerLogout() {
 // PLAYER TAB SWITCHING
 // ══════════════════════════════════════
 function switchPlayerTab(id) {
-  const tabs = ['availability','team-avail','my-lines','schedule'];
+  const tabs = ['availability','practice-avail','my-lines','schedule'];
   document.querySelectorAll('#player-nav-tabs .nav-tab').forEach((t,i) => {
     t.classList.toggle('active', tabs[i] === id);
   });
-  document.querySelectorAll('#player-app .tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('player-panel-' + id).classList.add('active');
-  if (id === 'team-avail') renderTeamAvailGrid();
+  document.querySelectorAll('#player-app .tab-panel').forEach(p => {
+    if (p.id !== 'player-panel-team-avail') p.classList.remove('active');
+  });
+  const panel = document.getElementById('player-panel-' + id);
+  if (panel) panel.classList.add('active');
   if (id === 'my-lines') renderMyLines();
+  if (id === 'practice-avail') renderPracticeAvailGrid();
 }
 
 // ══════════════════════════════════════
-// WEEK NAVIGATION
+// PRACTICE DAYS — Weekdays Apr 20 – Jun 12 2026 (8 weeks)
 // ══════════════════════════════════════
-let currentWeekOffset = 0;
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const PRACTICE_DAYS = [
+  ['2026-04-20','2026-04-21','2026-04-22','2026-04-23','2026-04-24'],
+  ['2026-04-27','2026-04-28','2026-04-29','2026-04-30','2026-05-01'],
+  ['2026-05-04','2026-05-05','2026-05-06','2026-05-07','2026-05-08'],
+  ['2026-05-11','2026-05-12','2026-05-13','2026-05-14','2026-05-15'],
+  ['2026-05-18','2026-05-19','2026-05-20','2026-05-21','2026-05-22'],
+  ['2026-05-25','2026-05-26','2026-05-27','2026-05-28','2026-05-29'],
+  ['2026-06-01','2026-06-02','2026-06-03','2026-06-04','2026-06-05'],
+  ['2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12'],
+];
+const WEEKDAY_LABELS = ['Mon','Tue','Wed','Thu','Fri'];
 
-function getWeekDates(offset) {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - day + (offset * 7));
-  monday.setHours(0,0,0,0);
-  const dates = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    dates.push(d);
-  }
-  return dates;
+function practiceWeekLabel(week) {
+  const s = week[0], e = week[week.length-1];
+  const fmt = ds => { const d = new Date(ds+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); };
+  return fmt(s) + '–' + fmt(e);
 }
 
-function dateKey(d) {
-  return d.toISOString().slice(0,10);
-}
+let currentPracticeWeek = 0; // index into PRACTICE_DAYS
 
-function weekLabel(dates) {
-  const fmt = d => (d.getMonth()+1) + '/' + d.getDate();
-  return fmt(dates[0]) + ' – ' + fmt(dates[6]);
-}
-
-function changeWeek(dir) {
-  currentWeekOffset += dir;
-  renderMyAvailGrid();
-  renderTeamAvailGrid();
-  const dates = getWeekDates(currentWeekOffset);
-  const lbl = weekLabel(dates);
-  const el1 = document.getElementById('avail-week-label');
-  const el2 = document.getElementById('team-avail-week-label');
-  if (el1) el1.textContent = lbl;
-  if (el2) el2.textContent = lbl;
-}
-
-// ══════════════════════════════════════
-// MY AVAILABILITY GRID
-// ══════════════════════════════════════
-const AVAIL_STATES = ['', 'available', 'maybe', 'unavailable'];
-const AVAIL_ICONS  = { '': '⬜', available: '✅', maybe: '🟡', unavailable: '❌' };
-
-async function getMyAvail() {
-  if (!appData) return {};
-  const avKey = 'availability_' + (currentPlayerUser ? currentPlayerUser.email.replace(/\./g,'_') : '');
-  return (appData[avKey]) || {};
-}
-
-async function setMyAvail(dateStr, state) {
+async function cyclePracticeAvail(dateStr) {
   if (!currentPlayerUser || !appData) return;
-  const avKey = 'availability_' + currentPlayerUser.email.replace(/\./g,'_');
-  if (!appData[avKey]) appData[avKey] = {};
-  appData[avKey][dateStr] = state;
+  const key = 'pavail_' + currentPlayerUser.email.replace(/[.@]/g,'_');
+  if (!appData[key]) appData[key] = {};
+  const cur  = appData[key][dateStr] || 'no';
+  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur) + 1) % AVAIL_CYCLE.length];
+  appData[key][dateStr] = next;
+  _suppressSaveErrors = true;
   await persistData();
-  renderMyAvailGrid();
-  renderTeamAvailGrid();
+  _suppressSaveErrors = false;
+  renderPracticeAvailGrid();
 }
 
-async function renderMyAvailGrid() {
-  const container = document.getElementById('my-avail-grid');
-  if (!container) return;
-  const dates  = getWeekDates(currentWeekOffset);
-  const myAvail = await getMyAvail();
-  const today = dateKey(new Date());
-
-  let html = '<div class="avail-grid">';
-  // Header row
-  html += '<div></div>';
-  dates.forEach(d => {
-    const isToday = dateKey(d) === today;
-    html += '<div class="avail-header" style="' + (isToday ? 'color:var(--teal);font-weight:600' : '') + '">' +
-      DAYS[d.getDay()] + '<br>' + (d.getMonth()+1) + '/' + d.getDate() +
-    '</div>';
-  });
-  // My row
-  html += '<div class="avail-player-name">' + (currentPlayerName || 'Me') + '</div>';
-  dates.forEach(d => {
-    const dk = dateKey(d);
-    const state = myAvail[dk] || '';
-    const nextState = AVAIL_STATES[(AVAIL_STATES.indexOf(state) + 1) % AVAIL_STATES.length];
-    html += '<div class="avail-cell mine ' + state + '" data-dk="' + dk + '" data-next="' + nextState + '" onclick="setMyAvail(this.dataset.dk,this.dataset.next)" title="Click to change">' +
-      AVAIL_ICONS[state] +
-    '</div>';
-  });
-  html += '</div>';
-  container.innerHTML = html;
-
-  // Update week labels
-  const lbl = weekLabel(dates);
-  const el1 = document.getElementById('avail-week-label');
-  if (el1) el1.textContent = lbl;
+function pavKey(email) {
+  return 'pavail_' + (email||'').replace(/[.@]/g,'_');
 }
 
-// ══════════════════════════════════════
-// TEAM AVAILABILITY GRID
-// ══════════════════════════════════════
-async function renderTeamAvailGrid() {
-  const container = document.getElementById('team-avail-grid');
+async function renderPracticeAvailGrid() {
+  const container = document.getElementById('practice-avail-grid');
+  const weekTabsEl = document.getElementById('practice-week-tabs');
   if (!container) return;
-  const dates  = getWeekDates(currentWeekOffset);
-  const today  = dateKey(new Date());
 
-  // Reload data to get latest from all players
+  // Fetch latest
   let data = appData;
-  try { data = await fsGet() || appData; } catch(e) {}
+  try { data = await fsGet() || appData; appData = data; } catch(e) {}
 
   const invites = (data && data.invites) || {};
-  const players = Object.values(invites).filter(inv => inv.status === 'joined' || inv.rosterName);
+  const today   = new Date().toISOString().slice(0,10);
+  const week    = PRACTICE_DAYS[currentPracticeWeek];
 
-  const lbl = weekLabel(dates);
-  const el2 = document.getElementById('team-avail-week-label');
-  if (el2) el2.textContent = lbl;
-
-  if (!players.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-title">No players have joined yet</div></div>';
-    return;
+  // Build week-picker buttons
+  if (weekTabsEl) {
+    weekTabsEl.innerHTML = PRACTICE_DAYS.map((w, i) => {
+      const isPast = w[w.length-1] < today;
+      return '<button class="practice-week-btn' + (i === currentPracticeWeek ? ' active' : '') + '"' +
+        (isPast ? ' style="opacity:0.45"' : '') +
+        ' onclick="currentPracticeWeek=' + i + ';renderPracticeAvailGrid()">' +
+        'Wk ' + (i+1) + ' · ' + practiceWeekLabel(w) +
+        '</button>';
+    }).join('');
   }
 
-  let html = '<div class="avail-grid" style="grid-template-columns: 140px repeat(7, 1fr)">';
-  html += '<div></div>';
-  dates.forEach(d => {
-    const isToday = dateKey(d) === today;
-    html += '<div class="avail-header" style="' + (isToday ? 'color:var(--teal);font-weight:600' : '') + '">' +
-      DAYS[d.getDay()] + '<br>' + (d.getMonth()+1) + '/' + d.getDate() +
-    '</div>';
+  // Build rows same as match availability
+  const rows = ROSTER.map(p => {
+    const emailKey = Object.keys(invites).find(k => invites[k].rosterName === p.name);
+    const inv   = emailKey ? invites[emailKey] : null;
+    const email = inv ? inv.email : null;
+    const isMe  = currentPlayerUser && email && email === currentPlayerUser.email;
+    const myAvail = email ? ((data && data[pavKey(email)]) || {}) : {};
+    return { name: p.name, email, isMe, avail: myAvail, joined: inv ? inv.status === 'joined' : false };
   });
 
-  players.forEach(inv => {
-    const avKey = 'availability_' + (inv.email || '').replace(/\./g,'_');
-    const avail = (data && data[avKey]) || {};
-    const isMe = currentPlayerUser && inv.email === currentPlayerUser.email;
-    html += '<div class="avail-player-name" style="' + (isMe ? 'color:var(--teal)' : '') + '">' +
-      (inv.rosterName || inv.email || '?').split(' ')[0] +
-      (isMe ? ' (you)' : '') +
-    '</div>';
-    dates.forEach(d => {
-      const dk = dateKey(d);
-      const state = avail[dk] || '';
-      html += '<div class="avail-cell others ' + state + '" title="' + (inv.rosterName||'') + ': ' + (state||'not set') + '">' +
-        AVAIL_ICONS[state] +
-      '</div>';
+  // ── Table ──
+  let html = '<table class="avail-table"><thead><tr>';
+  html += '<th>Player</th>';
+  week.forEach((ds, di) => {
+    const isPast = ds < today;
+    const d = new Date(ds+'T12:00:00');
+    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
+      WEEKDAY_LABELS[di] + '<br><span style="font-size:9px;color:var(--text-dim)">' +
+      (d.getMonth()+1)+'/'+d.getDate() + '</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(row => {
+    html += '<tr class="' + (row.isMe ? 'me' : '') + '">';
+    html += '<td>' + row.name +
+      (row.isMe ? ' <span style="font-size:10px;opacity:0.6">(you)</span>' : '') +
+      (!row.joined && !row.isMe ? ' <span style="font-size:10px;color:var(--text-dim);opacity:0.5">—</span>' : '') +
+    '</td>';
+    week.forEach(ds => {
+      const state = row.avail[ds] || 'no';
+      const cls   = AVAIL_CLASS[state];
+      const lbl   = AVAIL_LABEL[state];
+      const isPast = ds < today;
+      if (row.isMe && !isPast) {
+        html += '<td><span class="avail-pill ' + cls + ' clickable" data-ds="' + ds +
+          '" onclick="cyclePracticeAvail(this.dataset.ds)">' + lbl + '</span></td>';
+      } else if (row.joined || row.email) {
+        html += '<td><span class="avail-pill ' + cls + '"' +
+          (isPast ? ' style="opacity:0.45"' : '') + '>' + lbl + '</span></td>';
+      } else {
+        html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
+      }
     });
+    html += '</tr>';
   });
-  html += '</div>';
 
-  // Summary row: count available per day
-  html += '<div style="margin-top:12px">';
-  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;letter-spacing:.08em;text-transform:uppercase">Available per day</div>';
-  html += '<div style="display:grid;grid-template-columns:140px repeat(7,1fr);gap:4px">';
-  html += '<div></div>';
-  dates.forEach(d => {
-    const dk = dateKey(d);
-    const count = players.filter(inv => {
-      const avKey = 'availability_' + (inv.email||'').replace(/\./g,'_');
-      return (data && data[avKey] && data[avKey][dk]) === 'available';
-    }).length;
-    const color = count >= 6 ? 'var(--success)' : count >= 3 ? 'var(--warning)' : 'var(--text-dim)';
-    html += '<div style="text-align:center;font-family:var(--font-mono,monospace);font-size:14px;font-weight:500;color:' + color + ';padding:6px 0">' +
-      count + '</div>';
+  // Summary row
+  html += '<tr style="border-top:2px solid var(--border)">';
+  html += '<td style="font-size:11px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding-top:10px">Yes count</td>';
+  week.forEach(ds => {
+    const yesCount = rows.filter(r => (r.avail[ds]||'no') === 'yes').length;
+    const lrCount  = rows.filter(r => (r.avail[ds]||'no') === 'last-resort').length;
+    const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
+    html += '<td style="text-align:center;padding-top:10px">' +
+      '<div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
+      (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
+    '</td>';
   });
-  html += '</div></div>';
+  html += '</tr></tbody></table>';
   container.innerHTML = html;
 }
+
+// ══════════════════════════════════════
+// MATCH SUNDAYS — Apr 19 to Jun 14 2026
+// ══════════════════════════════════════
+const MATCH_SUNDAYS = [
+  '2026-04-19','2026-04-26','2026-05-03','2026-05-10',
+  '2026-05-17','2026-05-24','2026-05-31','2026-06-07','2026-06-14'
+];
+
+function sundayLabel(ds) {
+  const d = new Date(ds + 'T12:00:00');
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+// ── 3 states: yes / last-resort / no (default) ──
+const AVAIL_CYCLE = ['no','yes','last-resort'];
+const AVAIL_LABEL = { yes:'Yes', no:'No', 'last-resort':'Last Resort', '': 'No' };
+const AVAIL_CLASS = { yes:'yes', no:'no', 'last-resort':'last-resort', '':'no' };
+
+function avKey(email) {
+  return 'avail_' + (email||'').replace(/[.@]/g,'_');
+}
+
+async function cycleAvail(dateStr) {
+  if (!currentPlayerUser || !appData) return;
+  const key = avKey(currentPlayerUser.email);
+  if (!appData[key]) appData[key] = {};
+  const cur = appData[key][dateStr] || 'no';
+  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur) + 1) % AVAIL_CYCLE.length];
+  appData[key][dateStr] = next;
+  _suppressSaveErrors = true;
+  await persistData();
+  _suppressSaveErrors = false;
+  renderAvailGrid();
+}
+
+async function renderAvailGrid() {
+  const container = document.getElementById('avail-grid-container');
+  if (!container) return;
+
+  // Fetch latest data so we see everyone
+  let data = appData;
+  try { data = await fsGet() || appData; appData = data; } catch(e) {}
+
+  const invites = (data && data.invites) || {};
+  const today = new Date().toISOString().slice(0,10);
+
+  // Build full roster list — use ROSTER order but overlay invite join status
+  // Show ALL 13 roster players regardless of invite status
+  const rows = ROSTER.map(p => {
+    const emailKey = Object.keys(invites).find(k => invites[k].rosterName === p.name);
+    const inv = emailKey ? invites[emailKey] : null;
+    const email = inv ? inv.email : null;
+    const isMe = currentPlayerUser && email && email === currentPlayerUser.email;
+    const myAvail = email ? ((data && data[avKey(email)]) || {}) : {};
+    return { name: p.name, email, isMe, avail: myAvail, joined: inv ? inv.status === 'joined' : false };
+  });
+
+  // ── Table header ──
+  let html = '<table class="avail-table"><thead><tr>';
+  html += '<th>Player</th>';
+  MATCH_SUNDAYS.forEach(ds => {
+    const isPast = ds < today;
+    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
+      sundayLabel(ds) + '<br><span style="font-size:9px;color:var(--text-dim)">SUN</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  // ── One row per roster player ──
+  rows.forEach(row => {
+    const trClass = row.isMe ? 'me' : '';
+    html += '<tr class="' + trClass + '">';
+    // Name cell
+    html += '<td>' + row.name +
+      (row.isMe ? ' <span style="font-size:10px;opacity:0.6">(you)</span>' : '') +
+      (!row.joined && !row.isMe ? ' <span style="font-size:10px;color:var(--text-dim);opacity:0.5">—</span>' : '') +
+    '</td>';
+    // One cell per Sunday
+    MATCH_SUNDAYS.forEach(ds => {
+      const state = row.avail[ds] || 'no';
+      const cls = AVAIL_CLASS[state];
+      const lbl = AVAIL_LABEL[state];
+      if (row.isMe) {
+        // Clickable — cycle through states
+        html += '<td><span class="avail-pill ' + cls + ' clickable" data-ds="' + ds + '" onclick="cycleAvail(this.dataset.ds)">' + lbl + '</span></td>';
+      } else if (row.joined || row.email) {
+        // Read-only — show their status
+        html += '<td><span class="avail-pill ' + cls + '">' + lbl + '</span></td>';
+      } else {
+        // Not yet invited / joined — show dash
+        html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
+      }
+    });
+    html += '</tr>';
+  });
+
+  // ── Summary row: count Yes per Sunday ──
+  html += '<tr style="border-top:2px solid var(--border)">';
+  html += '<td style="font-size:11px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding-top:10px">Yes count</td>';
+  MATCH_SUNDAYS.forEach(ds => {
+    const yesCount = rows.filter(r => (r.avail[ds] || 'no') === 'yes').length;
+    const lrCount  = rows.filter(r => (r.avail[ds] || 'no') === 'last-resort').length;
+    const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
+    html += '<td style="text-align:center;padding-top:10px">' +
+      '<div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
+      (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
+    '</td>';
+  });
+  html += '</tr>';
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// Stub — no longer used but called in handlePlayerLogin
+async function renderMyAvailGrid() { await renderAvailGrid(); }
+async function renderTeamAvailGrid() { await renderAvailGrid(); }
 
 // ══════════════════════════════════════
 // MY LINES
