@@ -1468,15 +1468,15 @@ async function persistData() {
     setFirebaseStatus('saved');
   } catch(e) {
     console.warn('Firestore save failed:', e);
-    const isPermission = String(e).includes('403') || String(e).includes('permission');
-    const isApiKey     = String(e).includes('400') || String(e).includes('API key');
-    const isNetwork    = String(e).includes('fetch') || String(e).includes('network') || String(e).includes('Failed');
-    let detail = 'Save failed — stored locally only';
-    if (isPermission) detail = 'Permission denied — check Firestore rules';
-    else if (isApiKey) detail = 'API key rejected — check domain restrictions';
-    else if (isNetwork) detail = 'No connection — saved locally';
+    const isApiKey2    = String(e).includes('400') || String(e).includes('API_KEY') || String(e).includes('API key') || String(e).includes('rejected');
+    const isPermission = !isApiKey2 && (String(e).includes('403') || String(e).includes('PERMISSION_DENIED') || String(e).includes('permission'));
+    const isNetwork    = String(e).includes('fetch') || String(e).includes('Failed to fetch') || String(e).includes('NetworkError');
+    let detail = 'Save failed — stored locally';
+    if (isApiKey2)         detail = 'API key error — add appcodr.github.io to Google Cloud Console';
+    else if (isPermission) detail = 'Permission denied — update Firestore rules';
+    else if (isNetwork)    detail = 'No connection — saved locally';
     setFirebaseStatus('error', detail);
-    showToast(detail, true);
+    if (!_suppressSaveErrors) showToast(detail, true);
   }
 }
 
