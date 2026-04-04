@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Baseline Authority — Team HQ</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Unbounded:wght@400;600;700&amp;family=DM+Sans:wght@300;400;500;600&amp;display=swap" rel="stylesheet">
 
 <style>
@@ -791,6 +792,81 @@
     text-align: center; line-height: 1.3;
   }
 
+
+  /* ── PLAYER LOGIN SCREEN ── */
+  #player-login-screen {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--clay); z-index: 999;
+  }
+
+  .google-btn {
+    display: flex; align-items: center; gap: 12px;
+    background: #fff; color: #3c4043;
+    border: 1px solid #dadce0; border-radius: 8px;
+    padding: 12px 24px; font-size: 15px; font-weight: 500;
+    cursor: pointer; width: 100%; justify-content: center;
+    transition: box-shadow 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .google-btn:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  .google-btn svg { flex-shrink: 0; }
+
+  /* ── PLAYER APP SHELL ── */
+  #player-app { display: none; position: relative; z-index: 1; min-height: 100vh; }
+
+  /* ── AVAILABILITY GRID ── */
+  .avail-grid {
+    display: grid;
+    grid-template-columns: 120px repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 24px;
+  }
+
+  .avail-header {
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-dim); text-align: center; padding: 6px 0;
+  }
+
+  .avail-player-name {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    display: flex; align-items: center; padding: 4px 8px;
+    background: var(--surface); border-radius: 6px;
+  }
+
+  .avail-cell {
+    height: 40px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; transition: all 0.15s; border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .avail-cell.available    { background: rgba(0,200,150,0.18); border-color: rgba(0,200,150,0.4); }
+  .avail-cell.maybe        { background: rgba(245,166,35,0.18); border-color: rgba(245,166,35,0.4); }
+  .avail-cell.unavailable  { background: rgba(233,69,96,0.12);  border-color: rgba(233,69,96,0.3); opacity:0.5; }
+  .avail-cell.mine         { cursor: pointer; }
+  .avail-cell.mine:hover   { filter: brightness(1.2); transform: scale(1.05); }
+  .avail-cell.others       { cursor: default; }
+
+  .avail-legend {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    font-size: 12px; color: var(--text-muted); margin-bottom: 16px;
+  }
+  .avail-legend span { display: flex; align-items: center; gap: 5px; }
+
+  /* ── INVITE PANEL (captain only) ── */
+  .invite-row {
+    display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  .invite-status-badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 100px;
+  }
+  .invite-status-badge.pending  { background: rgba(245,166,35,0.15); color: var(--warning); }
+  .invite-status-badge.joined   { background: rgba(0,200,150,0.15);  color: var(--success); }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 600px) {
     .main { padding: 20px 16px; }
@@ -805,7 +881,7 @@
 <body>
 
 <!-- ══════════ LOGIN SCREEN ══════════ -->
-<div id="login-screen">
+<div id="login-screen" style="display:none">
   <div class="login-logo">Team HQ · Authorized Access</div>
   <h1 class="login-title">Baseline Authority</h1>
   <p class="login-subtitle">USTA Spring Adult 18+ · Austin, TX</p>
@@ -942,6 +1018,28 @@
           <div class="section-subtitle">13 Players · USTA Spring Adult 18+ WeekEND 2026</div>
         </div>
       </div>
+
+      <!-- Invite panel -->
+      <div class="form-card" style="margin-bottom:20px;border:1px solid rgba(0,180,216,0.25)">
+        <div style="font-size:12px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:14px">Player Invites</div>
+        <div class="invite-row">
+          <div class="form-group" style="flex:1;min-width:180px">
+            <label class="form-label">Player Email</label>
+            <input class="form-input" id="invite-email" type="email" placeholder="player@gmail.com" style="margin:0" />
+          </div>
+          <div class="form-group" style="flex:1;min-width:160px">
+            <label class="form-label">Roster Name</label>
+            <select class="form-select" id="invite-roster-name" style="margin:0">
+              <option value="">— Select player —</option><option value="Elan Vasudevan">Elan Vasudevan</option><option value="Rohith Chinnaswamy">Rohith Chinnaswamy</option><option value="Brad Jackson">Brad Jackson</option><option value="Jim Caldwell">Jim Caldwell</option><option value="Samir Modi">Samir Modi</option><option value="Cade Thompson">Cade Thompson</option><option value="Philip Bramson">Philip Bramson</option><option value="Jose Martinez">Jose Martinez</option><option value="Pavan Pawar">Pavan Pawar</option><option value="Gilbert Onyenwezi">Gilbert Onyenwezi</option><option value="Jean-Marie Kokou-Abi">Jean-Marie Kokou-Abi</option><option value="Brahma Thodati">Brahma Thodati</option><option value="Phani Kumar Valluripalli">Phani Kumar Valluripalli</option></select>
+          </div>
+          <button class="btn-primary" onclick="sendInvite()" style="white-space:nowrap;align-self:flex-end">Send Invite →</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+          After saving, share this link with the player: <span style="color:var(--teal);font-family:var(--font-mono,monospace);font-size:11px">https://appcodr.github.io/batennisanalysis/</span>
+        </div>
+        <div id="invite-list"></div>
+      </div>
+
       <div class="table-card">
         <table>
           <thead>
@@ -1073,6 +1171,145 @@
 
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- ══════════ PLAYER LOGIN SCREEN ══════════ -->
+<div id="player-login-screen">
+  <div class="login-logo">Player Portal · Baseline Authority</div>
+  <h1 class="login-title" style="font-size:clamp(22px,4vw,36px)">Welcome Back</h1>
+  <p class="login-subtitle">Sign in with the Google account you were invited with</p>
+
+  <div class="login-card" style="width:min(380px,90vw)">
+    <div id="google-signin-btn-wrapper" style="margin-bottom:16px">
+      <button class="google-btn" onclick="signInWithGoogle()">
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+          <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z"/>
+          <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z"/>
+          <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.31z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+    <div id="player-login-error" style="display:none;font-size:13px;color:var(--accent);text-align:center;margin-top:8px"></div>
+    <div style="text-align:center;margin-top:16px">
+      <button class="btn-secondary" style="font-size:12px" onclick="showLoginChoice()">← Back to Captain login</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PLAYER APP ══════════ -->
+<div id="player-app">
+  <header class="header">
+    <div class="header-brand">
+      <div class="header-dot" style="background:var(--teal)"></div>
+      Baseline Authority
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <div class="user-avatar" id="player-avatar" style="background:var(--teal)">?</div>
+        <span id="player-label">Player</span>
+      </div>
+      <div id="firebase-status-player" style="font-size:11px;padding:4px 12px;border-radius:100px;border:1px solid var(--border);color:var(--text-dim)">—</div>
+      <button class="logout-btn" onclick="playerLogout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="nav-tabs" id="player-nav-tabs">
+    <button class="nav-tab active" onclick="switchPlayerTab('availability')">My Availability</button>
+    <button class="nav-tab" onclick="switchPlayerTab('team-avail')">Team View</button>
+    <button class="nav-tab" onclick="switchPlayerTab('my-lines')">My Lines</button>
+    <button class="nav-tab" onclick="switchPlayerTab('schedule')">Schedule</button>
+  </div>
+
+  <div class="main">
+
+    <!-- ── MY AVAILABILITY ── -->
+    <div class="tab-panel active" id="player-panel-availability">
+      <div class="section-header">
+        <div>
+          <div class="section-title">My Availability</div>
+          <div class="section-subtitle" id="avail-week-label">This week</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" onclick="changeWeek(-1)">← Prev</button>
+          <button class="btn-secondary" onclick="changeWeek(1)">Next →</button>
+        </div>
+      </div>
+      <div class="avail-legend">
+        <span><span style="font-size:16px">✅</span> Available</span>
+        <span><span style="font-size:16px">🟡</span> Maybe</span>
+        <span><span style="font-size:16px">❌</span> Unavailable</span>
+        <span style="color:var(--text-dim);font-size:11px">Tap a cell to toggle</span>
+      </div>
+      <div id="my-avail-grid"></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Changes save automatically</div>
+    </div>
+
+    <!-- ── TEAM AVAILABILITY ── -->
+    <div class="tab-panel" id="player-panel-team-avail">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Team Availability</div>
+          <div class="section-subtitle" id="team-avail-week-label">This week</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" onclick="changeWeek(-1)">← Prev</button>
+          <button class="btn-secondary" onclick="changeWeek(1)">Next →</button>
+        </div>
+      </div>
+      <div class="avail-legend">
+        <span><span style="font-size:16px">✅</span> Available</span>
+        <span><span style="font-size:16px">🟡</span> Maybe</span>
+        <span><span style="font-size:16px">❌</span> Unavailable</span>
+        <span style="color:var(--text-dim);font-size:11px">⬜ Not set</span>
+      </div>
+      <div id="team-avail-grid"></div>
+    </div>
+
+    <!-- ── MY LINES ── -->
+    <div class="tab-panel" id="player-panel-my-lines">
+      <div class="section-header">
+        <div>
+          <div class="section-title">My Lines</div>
+          <div class="section-subtitle">Your current lineup assignments</div>
+        </div>
+      </div>
+      <div id="my-lines-content"></div>
+    </div>
+
+    <!-- ── SCHEDULE ── -->
+    <div class="tab-panel" id="player-panel-schedule">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Match Schedule</div>
+          <div class="section-subtitle">USTA Spring Adult 18+ WeekEND · 2026</div>
+        </div>
+      </div>
+      <div id="player-schedule-content">
+        <div class="empty-state">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">Schedule coming soon</div>
+          <div class="empty-sub">Captain will add match dates here</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════ LOGIN CHOICE ══════════ -->
+<div id="login-choice" style="position:fixed;inset:0;background:var(--clay);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:1001;gap:16px">
+  <div class="login-logo">Baseline Authority · Team HQ</div>
+  <h1 class="login-title" style="font-size:clamp(22px,4vw,36px);margin-bottom:8px">Who are you?</h1>
+  <div style="display:flex;flex-direction:column;gap:12px;width:min(340px,90vw)">
+    <button class="btn-primary" style="padding:16px;font-size:14px" onclick="showCaptainLogin()">
+      🎾 Captain / Analyst
+    </button>
+    <button class="btn-secondary" style="padding:16px;font-size:14px" onclick="showPlayerLogin()">
+      👤 Player (Google Sign-In)
+    </button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -2350,7 +2587,415 @@ async function initApp() {
   renderLines();
   renderCombos();
   renderPracticeLog();
+  renderInviteList();
   previewWeather();
+}
+
+// ══════════════════════════════════════
+// STARTUP — show login choice
+// ══════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('login-choice').style.display = 'flex';
+});
+
+function showCaptainLogin() {
+  document.getElementById('login-choice').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function showPlayerLogin() {
+  document.getElementById('login-choice').style.display = 'none';
+  document.getElementById('player-login-screen').style.display = 'flex';
+}
+
+function showLoginChoice() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('player-login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('player-app').style.display = 'none';
+  document.getElementById('login-choice').style.display = 'flex';
+}
+
+// ══════════════════════════════════════
+// GOOGLE SIGN-IN (Player auth)
+// ══════════════════════════════════════
+const GOOGLE_CLIENT_ID = '250416923580-n7ldqa79d0du1p8jn1f03us12gd294no.apps.googleusercontent.com';
+let currentPlayerUser = null;
+let currentPlayerName = null;
+
+function signInWithGoogle() {
+  if (typeof google === 'undefined') {
+    showPlayerError('Google Sign-In not available. Check your connection.');
+    return;
+  }
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'email profile',
+    callback: async (resp) => {
+      if (resp.error) { showPlayerError('Sign-in cancelled.'); return; }
+      try {
+        // Get user info from Google
+        const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: 'Bearer ' + resp.access_token }
+        }).then(r => r.json());
+
+        await handlePlayerLogin(userInfo.email, userInfo.name, userInfo.picture);
+      } catch(e) {
+        showPlayerError('Sign-in failed. Try again.');
+      }
+    }
+  });
+  client.requestAccessToken();
+}
+
+async function handlePlayerLogin(email, name, picture) {
+  setPlayerStatus('Checking invite…');
+  try {
+    // Load team data to check invites
+    const data = await fsGet();
+    const invites = (data && data.invites) || {};
+    const emailKey = email.replace(/\./g, '_');
+
+    if (!invites[emailKey]) {
+      showPlayerError('You have not been invited yet. Contact Captain Elan.');
+      setPlayerStatus('Not invited');
+      return;
+    }
+
+    const invite = invites[emailKey];
+    currentPlayerUser = { email, name, picture };
+    currentPlayerName = invite.rosterName || name;
+
+    // Mark invite as joined
+    if (!appData) appData = data || {};
+    if (!appData.invites) appData.invites = {};
+    appData.invites[emailKey].status = 'joined';
+    appData.invites[emailKey].lastSeen = new Date().toISOString();
+    await persistData();
+
+    // Show player app
+    document.getElementById('player-login-screen').style.display = 'none';
+    document.getElementById('player-app').style.display = 'block';
+    document.getElementById('player-label').textContent = currentPlayerName;
+    const initials = currentPlayerName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    document.getElementById('player-avatar').textContent = initials;
+    setPlayerStatus('Live');
+
+    // Init player views
+    currentWeekOffset = 0;
+    await renderMyAvailGrid();
+    await renderTeamAvailGrid();
+    renderMyLines();
+
+  } catch(e) {
+    showPlayerError('Connection error: ' + e.message);
+    setPlayerStatus('Error');
+  }
+}
+
+function showPlayerError(msg) {
+  const el = document.getElementById('player-login-error');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+
+function setPlayerStatus(msg) {
+  const el = document.getElementById('firebase-status-player');
+  if (el) el.textContent = msg;
+}
+
+function playerLogout() {
+  currentPlayerUser = null; currentPlayerName = null;
+  document.getElementById('player-app').style.display = 'none';
+  showLoginChoice();
+  if (typeof google !== 'undefined') {
+    google.accounts.oauth2.revoke && google.accounts.oauth2.revoke('');
+  }
+}
+
+// ══════════════════════════════════════
+// PLAYER TAB SWITCHING
+// ══════════════════════════════════════
+function switchPlayerTab(id) {
+  const tabs = ['availability','team-avail','my-lines','schedule'];
+  document.querySelectorAll('#player-nav-tabs .nav-tab').forEach((t,i) => {
+    t.classList.toggle('active', tabs[i] === id);
+  });
+  document.querySelectorAll('#player-app .tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('player-panel-' + id).classList.add('active');
+  if (id === 'team-avail') renderTeamAvailGrid();
+  if (id === 'my-lines') renderMyLines();
+}
+
+// ══════════════════════════════════════
+// WEEK NAVIGATION
+// ══════════════════════════════════════
+let currentWeekOffset = 0;
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function getWeekDates(offset) {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - day + (offset * 7));
+  monday.setHours(0,0,0,0);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+}
+
+function dateKey(d) {
+  return d.toISOString().slice(0,10);
+}
+
+function weekLabel(dates) {
+  const fmt = d => (d.getMonth()+1) + '/' + d.getDate();
+  return fmt(dates[0]) + ' – ' + fmt(dates[6]);
+}
+
+function changeWeek(dir) {
+  currentWeekOffset += dir;
+  renderMyAvailGrid();
+  renderTeamAvailGrid();
+  const dates = getWeekDates(currentWeekOffset);
+  const lbl = weekLabel(dates);
+  const el1 = document.getElementById('avail-week-label');
+  const el2 = document.getElementById('team-avail-week-label');
+  if (el1) el1.textContent = lbl;
+  if (el2) el2.textContent = lbl;
+}
+
+// ══════════════════════════════════════
+// MY AVAILABILITY GRID
+// ══════════════════════════════════════
+const AVAIL_STATES = ['', 'available', 'maybe', 'unavailable'];
+const AVAIL_ICONS  = { '': '⬜', available: '✅', maybe: '🟡', unavailable: '❌' };
+
+async function getMyAvail() {
+  if (!appData) return {};
+  const avKey = 'availability_' + (currentPlayerUser ? currentPlayerUser.email.replace(/\./g,'_') : '');
+  return (appData[avKey]) || {};
+}
+
+async function setMyAvail(dateStr, state) {
+  if (!currentPlayerUser || !appData) return;
+  const avKey = 'availability_' + currentPlayerUser.email.replace(/\./g,'_');
+  if (!appData[avKey]) appData[avKey] = {};
+  appData[avKey][dateStr] = state;
+  await persistData();
+  renderMyAvailGrid();
+  renderTeamAvailGrid();
+}
+
+async function renderMyAvailGrid() {
+  const container = document.getElementById('my-avail-grid');
+  if (!container) return;
+  const dates  = getWeekDates(currentWeekOffset);
+  const myAvail = await getMyAvail();
+  const today = dateKey(new Date());
+
+  let html = '<div class="avail-grid">';
+  // Header row
+  html += '<div></div>';
+  dates.forEach(d => {
+    const isToday = dateKey(d) === today;
+    html += '<div class="avail-header" style="' + (isToday ? 'color:var(--teal);font-weight:600' : '') + '">' +
+      DAYS[d.getDay()] + '<br>' + (d.getMonth()+1) + '/' + d.getDate() +
+    '</div>';
+  });
+  // My row
+  html += '<div class="avail-player-name">' + (currentPlayerName || 'Me') + '</div>';
+  dates.forEach(d => {
+    const dk = dateKey(d);
+    const state = myAvail[dk] || '';
+    const nextState = AVAIL_STATES[(AVAIL_STATES.indexOf(state) + 1) % AVAIL_STATES.length];
+    html += '<div class="avail-cell mine ' + state + '" data-dk="' + dk + '" data-next="' + nextState + '" onclick="setMyAvail(this.dataset.dk,this.dataset.next)" title="Click to change">' +
+      AVAIL_ICONS[state] +
+    '</div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Update week labels
+  const lbl = weekLabel(dates);
+  const el1 = document.getElementById('avail-week-label');
+  if (el1) el1.textContent = lbl;
+}
+
+// ══════════════════════════════════════
+// TEAM AVAILABILITY GRID
+// ══════════════════════════════════════
+async function renderTeamAvailGrid() {
+  const container = document.getElementById('team-avail-grid');
+  if (!container) return;
+  const dates  = getWeekDates(currentWeekOffset);
+  const today  = dateKey(new Date());
+
+  // Reload data to get latest from all players
+  let data = appData;
+  try { data = await fsGet() || appData; } catch(e) {}
+
+  const invites = (data && data.invites) || {};
+  const players = Object.values(invites).filter(inv => inv.status === 'joined' || inv.rosterName);
+
+  const lbl = weekLabel(dates);
+  const el2 = document.getElementById('team-avail-week-label');
+  if (el2) el2.textContent = lbl;
+
+  if (!players.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-title">No players have joined yet</div></div>';
+    return;
+  }
+
+  let html = '<div class="avail-grid" style="grid-template-columns: 140px repeat(7, 1fr)">';
+  html += '<div></div>';
+  dates.forEach(d => {
+    const isToday = dateKey(d) === today;
+    html += '<div class="avail-header" style="' + (isToday ? 'color:var(--teal);font-weight:600' : '') + '">' +
+      DAYS[d.getDay()] + '<br>' + (d.getMonth()+1) + '/' + d.getDate() +
+    '</div>';
+  });
+
+  players.forEach(inv => {
+    const avKey = 'availability_' + (inv.email || '').replace(/\./g,'_');
+    const avail = (data && data[avKey]) || {};
+    const isMe = currentPlayerUser && inv.email === currentPlayerUser.email;
+    html += '<div class="avail-player-name" style="' + (isMe ? 'color:var(--teal)' : '') + '">' +
+      (inv.rosterName || inv.email || '?').split(' ')[0] +
+      (isMe ? ' (you)' : '') +
+    '</div>';
+    dates.forEach(d => {
+      const dk = dateKey(d);
+      const state = avail[dk] || '';
+      html += '<div class="avail-cell others ' + state + '" title="' + (inv.rosterName||'') + ': ' + (state||'not set') + '">' +
+        AVAIL_ICONS[state] +
+      '</div>';
+    });
+  });
+  html += '</div>';
+
+  // Summary row: count available per day
+  html += '<div style="margin-top:12px">';
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;letter-spacing:.08em;text-transform:uppercase">Available per day</div>';
+  html += '<div style="display:grid;grid-template-columns:140px repeat(7,1fr);gap:4px">';
+  html += '<div></div>';
+  dates.forEach(d => {
+    const dk = dateKey(d);
+    const count = players.filter(inv => {
+      const avKey = 'availability_' + (inv.email||'').replace(/\./g,'_');
+      return (data && data[avKey] && data[avKey][dk]) === 'available';
+    }).length;
+    const color = count >= 6 ? 'var(--success)' : count >= 3 ? 'var(--warning)' : 'var(--text-dim)';
+    html += '<div style="text-align:center;font-family:var(--font-mono,monospace);font-size:14px;font-weight:500;color:' + color + ';padding:6px 0">' +
+      count + '</div>';
+  });
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
+// ══════════════════════════════════════
+// MY LINES
+// ══════════════════════════════════════
+function renderMyLines() {
+  const container = document.getElementById('my-lines-content');
+  if (!container || !currentPlayerName || !appData) return;
+  const lines = (appData.playerLines || []);
+  const myLines = lines.filter(l =>
+    l.player === currentPlayerName ||
+    l.player1 === currentPlayerName ||
+    l.player2 === currentPlayerName
+  );
+
+  if (!myLines.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div>' +
+      '<div class="empty-title">Not currently assigned to a line</div>' +
+      '<div class="empty-sub">Check back after the captain sets the lineup</div></div>';
+    return;
+  }
+
+  container.innerHTML = myLines.map(l => {
+    if (l.type === 'singles') {
+      return '<div class="line-card">' +
+        '<div class="line-number">Singles<span>#' + l.line + '</span></div>' +
+        '<div class="line-divider"></div>' +
+        '<div class="line-players"><div class="line-player-name" style="color:var(--teal)">' + l.player + '</div></div>' +
+        '<span class="line-tag tag-singles">Your Line</span>' +
+      '</div>';
+    } else {
+      const partner = l.player1 === currentPlayerName ? l.player2 : l.player1;
+      return '<div class="line-card">' +
+        '<div class="line-number">Doubles<span>#' + l.line + '</span></div>' +
+        '<div class="line-divider"></div>' +
+        '<div class="line-players">' +
+          '<div class="line-player-name" style="color:var(--teal)">' + currentPlayerName + '</div>' +
+          '<div class="line-player-name" style="font-size:13px;color:var(--text-muted)">with ' + partner + '</div>' +
+        '</div>' +
+        '<span class="line-tag tag-doubles">Your Line</span>' +
+      '</div>';
+    }
+  }).join('');
+}
+
+// ══════════════════════════════════════
+// CAPTAIN: INVITE MANAGEMENT
+// (shown in captain app under Roster tab)
+// ══════════════════════════════════════
+async function sendInvite() {
+  const emailInput = document.getElementById('invite-email');
+  const nameInput  = document.getElementById('invite-roster-name');
+  const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  const name  = nameInput  ? nameInput.value.trim() : '';
+  if (!email || !name) { showToast('Enter both email and roster name.', true); return; }
+  if (!email.includes('@')) { showToast('Enter a valid email address.', true); return; }
+
+  const emailKey = email.replace(/\./g,'_');
+  if (!appData.invites) appData.invites = {};
+  if (appData.invites[emailKey]) { showToast(name + ' is already invited.', true); return; }
+
+  appData.invites[emailKey] = {
+    email, rosterName: name, status: 'pending',
+    invitedAt: new Date().toISOString(), invitedBy: 'Elan Vasudevan'
+  };
+  await persistData();
+  renderInviteList();
+  if (emailInput) emailInput.value = '';
+  if (nameInput)  nameInput.value = '';
+  showToast('Invite saved for ' + name + '! Send them the link: https://appcodr.github.io/batennisanalysis/');
+}
+
+async function revokeInvite(emailKey) {
+  if (!confirm('Remove this player access?')) return;
+  if (appData.invites) delete appData.invites[emailKey];
+  await persistData();
+  renderInviteList();
+  showToast('Access revoked.');
+}
+
+function renderInviteList() {
+  const container = document.getElementById('invite-list');
+  if (!container || !appData) return;
+  const invites = appData.invites || {};
+  const keys = Object.keys(invites);
+  if (!keys.length) {
+    container.innerHTML = '<div style="font-size:13px;color:var(--text-dim);padding:12px 0">No players invited yet</div>';
+    return;
+  }
+  container.innerHTML = keys.map(k => {
+    const inv = invites[k];
+    const statusClass = inv.status === 'joined' ? 'joined' : 'pending';
+    const statusLabel = inv.status === 'joined' ? '✓ Joined' : '⏳ Pending';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+      '<div style="flex:1">' +
+        '<div style="font-size:14px;font-weight:500">' + inv.rosterName + '</div>' +
+        '<div style="font-size:12px;color:var(--text-dim)">' + inv.email + '</div>' +
+      '</div>' +
+      '<span class="invite-status-badge ' + statusClass + '">' + statusLabel + '</span>' +
+      '<button class="btn-secondary" style="padding:5px 12px;font-size:12px" data-key="' + k + '" onclick="revokeInvite(this.dataset.key)">Remove</button>' +
+    '</div>';
+  }).join('');
 }
 </script>
 </body>
