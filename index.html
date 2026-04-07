@@ -3042,7 +3042,7 @@ async function renderPracticeAvailGrid() {
   week.forEach((ds, di) => {
     const isPast = ds < today;
     const d = new Date(ds+'T12:00:00');
-    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
+    html += '<th class="match-date" style="' + ((isPast || isNoMatch) ? 'opacity:0.45' : '') + '">' +
       WEEKDAY_LABELS[di] + '<br><span style="font-size:9px;color:var(--text-dim)">' +
       (d.getMonth()+1)+'/'+d.getDate() + '</span></th>';
   });
@@ -3149,7 +3149,8 @@ async function renderAvailGrid() {
   // ── Table header ──
   let html = '<table class="avail-table"><thead><tr>';
   html += '<th>Player</th>';
-    const BYE_DATES = new Set(MATCH_SCHEDULE.filter(m => m.isBye).map(m => m.date));
+    const BYE_DATES    = new Set(MATCH_SCHEDULE.filter(m => m.isBye).map(m => m.date));
+  const NO_MATCH_DATES = new Set(['2026-05-24']); // Memorial Day weekend — no match scheduled
 
   // Build home/away lookup from schedule
   const HA_MAP = {};
@@ -3165,11 +3166,13 @@ async function renderAvailGrid() {
     const isHome = ha && !ha.isBye && ha.isHome;
     const isAway = ha && !ha.isBye && !ha.isHome;
 
+    const isNoMatch = NO_MATCH_DATES.has(ds);
     let subLabel, subColor;
-    if (isBye)       { subLabel = 'BYE';  subColor = 'var(--warning)'; }
-    else if (isHome) { subLabel = 'HOME'; subColor = 'var(--teal)'; }
-    else if (isAway) { subLabel = 'AWAY'; subColor = 'var(--accent)'; }
-    else             { subLabel = 'SUN';  subColor = 'var(--text-dim)'; }
+    if (isBye)        { subLabel = 'BYE';       subColor = 'var(--warning)'; }
+    else if (isNoMatch){ subLabel = 'NO MATCH'; subColor = 'var(--text-dim)'; }
+    else if (isHome)  { subLabel = 'HOME';      subColor = 'var(--teal)'; }
+    else if (isAway)  { subLabel = 'AWAY';      subColor = 'var(--accent)'; }
+    else              { subLabel = 'SUN';       subColor = 'var(--text-dim)'; }
 
     html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
       sundayLabel(ds) +
@@ -3195,6 +3198,12 @@ async function renderAvailGrid() {
           'display:inline-block">Bye</span></td>';
         return;
       }
+      if (NO_MATCH_DATES.has(ds)) {
+        html += '<td><span style="font-size:11px;padding:3px 8px;border-radius:6px;' +
+          'background:rgba(90,106,122,0.12);color:var(--text-dim);border:1px solid rgba(90,106,122,0.2);' +
+          'display:inline-block">No Match</span></td>';
+        return;
+      }
       const state = row.avail[ds] || 'no';
       const cls = AVAIL_CLASS[state];
       const lbl = AVAIL_LABEL[state];
@@ -3213,7 +3222,7 @@ async function renderAvailGrid() {
   html += '<tr style="border-top:2px solid var(--border)">';
   html += '<td style="font-size:11px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding-top:10px">Yes count</td>';
   MATCH_SUNDAYS.forEach(ds => {
-    if (BYE_DATES.has(ds)) { html += '<td></td>'; return; }
+    if (BYE_DATES.has(ds) || NO_MATCH_DATES.has(ds)) { html += '<td></td>'; return; }
     const yesCount = rows.filter(r => (r.avail[ds] || 'no') === 'yes').length;
     const lrCount  = rows.filter(r => (r.avail[ds] || 'no') === 'last-resort').length;
     const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
