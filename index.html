@@ -3151,14 +3151,30 @@ async function renderAvailGrid() {
   html += '<th>Player</th>';
     const BYE_DATES = new Set(MATCH_SCHEDULE.filter(m => m.isBye).map(m => m.date));
 
+  // Build home/away lookup from schedule
+  const HA_MAP = {};
+  MATCH_SCHEDULE.forEach(m => {
+    const isHome = m.home === 'Baseline Authority';
+    HA_MAP[m.date] = { isBye: m.isBye, isHome };
+  });
+
   MATCH_SUNDAYS.forEach(ds => {
     const isPast = ds < today;
     const isBye  = BYE_DATES.has(ds);
-    const d = new Date(ds+'T12:00:00');
+    const ha     = HA_MAP[ds];
+    const isHome = ha && !ha.isBye && ha.isHome;
+    const isAway = ha && !ha.isBye && !ha.isHome;
+
+    let subLabel, subColor;
+    if (isBye)       { subLabel = 'BYE';  subColor = 'var(--warning)'; }
+    else if (isHome) { subLabel = 'HOME'; subColor = 'var(--teal)'; }
+    else if (isAway) { subLabel = 'AWAY'; subColor = 'var(--accent)'; }
+    else             { subLabel = 'SUN';  subColor = 'var(--text-dim)'; }
+
     html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
       sundayLabel(ds) +
-      '<br><span style="font-size:9px;color:' + (isBye ? 'var(--warning)' : 'var(--text-dim)') + '">' +
-      (isBye ? 'BYE' : 'SUN') + '</span></th>';
+      '<br><span style="font-size:9px;font-weight:500;color:' + subColor + '">' + subLabel + '</span>' +
+    '</th>';
   });
   html += '</tr></thead><tbody>';
 
