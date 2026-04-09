@@ -944,6 +944,37 @@
     border:1px solid rgba(245,166,35,0.3);font-weight:500;
   }
 
+  /* ── AI ANALYSIS ── */
+  #ai-analysis-content h3 {
+    font-family: var(--font-sans,sans-serif);
+    font-size: 13px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--teal); margin: 18px 0 8px;
+  }
+  #ai-analysis-content h3:first-child { margin-top: 0; }
+  #ai-analysis-content p { margin: 0 0 10px; }
+  #ai-analysis-content ul { margin: 0 0 10px; padding-left: 20px; }
+  #ai-analysis-content li { margin-bottom: 4px; }
+  #ai-analysis-content strong { color: var(--text); font-weight: 600; }
+  #ai-analysis-content .recommend {
+    background: rgba(0,200,150,0.08); border-left: 3px solid var(--success);
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0;
+    font-size: 13px;
+  }
+  #ai-analysis-content .warn {
+    background: rgba(245,166,35,0.08); border-left: 3px solid var(--warning);
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0;
+    font-size: 13px;
+  }
+
+  .analysis-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(0,180,216,0.3); border-top-color: var(--teal);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   .practice-week-btn {
     font-size: 11px; padding: 5px 12px; border-radius: 6px;
     border: 1px solid var(--border); background: var(--surface);
@@ -1036,7 +1067,7 @@
     <button class="nav-tab active" onclick="switchTab('scores')">Season Scores</button>
     <button class="nav-tab" onclick="switchTab('roster')">Roster</button>
     <button class="nav-tab" onclick="switchTab('players')">Player Lines</button>
-    <button class="nav-tab" onclick="switchTab('combos')">Doubles Combos</button>
+    <button class="nav-tab" onclick="switchTab('combos')">Analysis</button>
     <button class="nav-tab" onclick="switchTab('practice')">Practice Log</button>
     <button class="nav-tab" onclick="switchTab('log-entry')">Log Session</button>
   </div>
@@ -1195,16 +1226,33 @@
       </div>
     </div>
 
-    <!-- ── COMBOS TAB ── -->
+    <!-- ── ANALYSIS TAB ── -->
     <div class="tab-panel" id="panel-combos">
       <div class="section-header">
         <div>
-          <div class="section-title">Doubles Combinations</div>
-          <div class="section-subtitle">Partnership win/loss stats computed from practice sessions</div>
+          <div class="section-title">Analysis</div>
+          <div class="section-subtitle">Singles &amp; Doubles line recommendations powered by AI</div>
         </div>
-        <button class="btn-primary" onclick="refreshCombos()">&#8635; Refresh Combos</button>
+        <button class="btn-primary" id="refresh-analysis-btn" onclick="refreshAnalysis()">&#8635; Refresh Analysis</button>
       </div>
-      <div id="combos-status" style="font-size:12px;color:var(--text-muted);margin-bottom:16px;display:none"></div>
+
+      <!-- Stats summary strip -->
+      <div id="combos-status" style="font-size:12px;color:var(--text-muted);margin-bottom:20px;display:none"></div>
+
+      <!-- AI Analysis block -->
+      <div id="ai-analysis-block" style="margin-bottom:28px;display:none">
+        <div style="background:var(--surface);border:1px solid rgba(0,180,216,0.25);border-radius:var(--radius);overflow:hidden">
+          <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)"></div>
+            <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);font-weight:500">AI Analysis</span>
+            <span style="font-size:11px;color:var(--text-dim);margin-left:auto" id="ai-analysis-timestamp"></span>
+          </div>
+          <div id="ai-analysis-content" style="padding:18px 20px;font-size:14px;line-height:1.75;color:var(--text)"></div>
+        </div>
+      </div>
+
+      <!-- Doubles combo cards -->
+      <div style="font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px" id="combos-section-label" style="display:none">Doubles Partnership Stats</div>
       <div class="combo-grid" id="combo-container"></div>
     </div>
 
@@ -2198,9 +2246,31 @@ function renderCombos() {
   const container = document.getElementById('combo-container');
   const combos = appData.doublesCombos || [];
   const statusEl = document.getElementById('combos-status');
+
+  // Restore last saved analysis if available
+  const analysisBlock = document.getElementById('ai-analysis-block');
+  const analysisContent = document.getElementById('ai-analysis-content');
+  const analysisTs = document.getElementById('ai-analysis-timestamp');
+  const labelEl = document.getElementById('combos-section-label');
+  if (appData.lastAnalysis && analysisBlock && analysisContent) {
+    const text = appData.lastAnalysis.text;
+    const html = text
+      .replace(/### (.+)/g, '<h3>$1</h3>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/(Singles Line \d:|Doubles Line \d:)/g,
+        '<strong style="color:var(--teal)">$1</strong>');
+    analysisContent.innerHTML = '<p>' + html + '</p>';
+    analysisBlock.style.display = 'block';
+    if (analysisTs) analysisTs.textContent = 'Updated ' + new Date(appData.lastAnalysis.timestamp).toLocaleString();
+    if (labelEl) labelEl.style.display = 'block';
+  }
+
   if (!combos.length) {
     if (statusEl) statusEl.style.display = 'none';
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">&#129309;</div><div class="empty-title">No combo data yet</div><div class="empty-sub">Log doubles practice sessions then hit Refresh Combos</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">&#129309;</div><div class="empty-title">No combo data yet</div><div class="empty-sub">Log doubles practice sessions then hit Refresh Analysis</div></div>';
     return;
   }
   const sorted = [...combos].sort((a,b) => {
@@ -2231,6 +2301,7 @@ function renderCombos() {
 }
 
 async function refreshCombos() {
+  // Recompute combo stats from practice sessions
   const sessions = appData.practiceSessions || [];
   const map = {};
   let scanned = 0;
@@ -2248,9 +2319,146 @@ async function refreshCombos() {
   appData.doublesCombos = Object.values(map);
   await persistData();
   renderCombos();
-  showToast(appData.doublesCombos.length
-    ? 'Found ' + appData.doublesCombos.length + ' pairings from ' + scanned + ' doubles matches!'
-    : 'No doubles matches found — log doubles sessions first.');
+}
+
+async function refreshAnalysis() {
+  // Step 1: recompute combo stats
+  await refreshCombos();
+
+  // Step 2: Build context for Claude
+  const sessions  = appData.practiceSessions || [];
+  const combos    = appData.doublesCombos || [];
+  const lines     = appData.playerLines || [];
+  const history   = appData.matchHistory || [];
+
+  // Singles stats from practice
+  const singlesMap = {};
+  sessions.forEach(s => {
+    (s.matches || []).forEach(m => {
+      if (m.type !== 'singles') return;
+      const p = (m.p1 || '').trim();
+      if (!p || p === '—') return;
+      if (!singlesMap[p]) singlesMap[p] = { wins: 0, losses: 0 };
+      if (m.result === 'win') singlesMap[p].wins++; else singlesMap[p].losses++;
+    });
+  });
+
+  const rosterInfo = ROSTER.map(p => {
+    const pref = (appData.rosterPrefs && appData.rosterPrefs[p.name]) || p.pref || 'both';
+    const s = singlesMap[p.name] || { wins: 0, losses: 0 };
+    const comboData = combos.filter(c => c.p1 === p.name || c.p2 === p.name);
+    const doublesW = comboData.reduce((sum,c)=>sum+c.wins,0);
+    const doublesL = comboData.reduce((sum,c)=>sum+c.losses,0);
+    return p.name + ' (NTRP ' + p.ntrp + ', pref:' + pref +
+      ', singles ' + s.wins + 'W-' + s.losses + 'L' +
+      ', doubles ' + doublesW + 'W-' + doublesL + 'L)';
+  }).join('\n');
+
+  const combosInfo = combos.length
+    ? combos.map(c => {
+        const tot = c.wins + c.losses;
+        const pct = tot ? Math.round(c.wins/tot*100) : 0;
+        return c.p1 + ' & ' + c.p2 + ': ' + c.wins + 'W-' + c.losses + 'L (' + pct + '% win rate)';
+      }).join('\n')
+    : 'No doubles data yet';
+
+  const currentLines = lines.map(l =>
+    l.type === 'singles'
+      ? 'Singles Line ' + l.line + ': ' + (l.player||'—')
+      : 'Doubles Line ' + l.line + ': ' + (l.player1||'—') + ' & ' + (l.player2||'—')
+  ).join('\n');
+
+  const seasonRecord = history.length
+    ? history.filter(m=>m.result==='win').length + 'W-' + history.filter(m=>m.result==='loss').length + 'L'
+    : 'No matches yet';
+
+  const prompt = `You are a USTA tennis team analyst. Analyze this team data for "Baseline Authority" competing in USTA Spring Adult 18+ WeekEND 2026 in Austin, TX.
+
+LEAGUE FORMAT: 2 singles lines + 3 doubles lines per match.
+
+ROSTER & STATS:
+${rosterInfo}
+
+CURRENT LINE ASSIGNMENTS:
+${currentLines}
+
+DOUBLES PARTNERSHIP STATS (from practice):
+${combosInfo}
+
+SEASON RECORD: ${seasonRecord}
+
+Please provide:
+
+### Singles Line Analysis
+Analyze the current singles line assignments. Who is performing best? Who should be on Singles Line 1 vs Line 2? Note any players who prefer singles.
+
+### Doubles Line Analysis
+Analyze the doubles partnerships. Which pairings have the best win rates? Any chemistry issues? Suggest optimal pairings for Lines 1, 2, and 3.
+
+### Recommended Lineup
+Give a concrete recommended lineup:
+- Singles Line 1: [name]
+- Singles Line 2: [name]
+- Doubles Line 1: [name] & [name]
+- Doubles Line 2: [name] & [name]
+- Doubles Line 3: [name] & [name]
+
+### Key Observations
+2-3 bullet points on what the data shows — strengths, weaknesses, patterns to watch.
+
+Be specific, data-driven, and concise. Format using the section headers above. Use player first names only for readability.`;
+
+  // Step 3: Show loading state
+  const btn = document.getElementById('refresh-analysis-btn');
+  const block = document.getElementById('ai-analysis-block');
+  const contentEl = document.getElementById('ai-analysis-content');
+  const labelEl = document.getElementById('combos-section-label');
+  if (btn) btn.innerHTML = '<span class="analysis-spinner"></span> Analysing…';
+  block.style.display = 'block';
+  contentEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px"><span class="analysis-spinner"></span> Claude is analysing your team data…</div>';
+
+  // Step 4: Call Claude API
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await resp.json();
+    const text = data.content && data.content[0] ? data.content[0].text : 'No analysis returned.';
+
+    // Render markdown-lite
+    const html = text
+      .replace(/### (.+)/g, '<h3>$1</h3>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/^(?!<[hul])/gm, '')
+      .replace(/(Singles Line \d:|Doubles Line \d:|Singles Line 1:|Singles Line 2:)/g,
+        '<strong style="color:var(--teal)">$1</strong>');
+
+    contentEl.innerHTML = '<p>' + html + '</p>';
+
+    // Timestamp
+    const ts = document.getElementById('ai-analysis-timestamp');
+    if (ts) ts.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    if (labelEl) labelEl.style.display = 'block';
+
+    // Save analysis to appData
+    appData.lastAnalysis = { text, timestamp: Date.now() };
+    await persistData();
+    showToast('Analysis complete!');
+  } catch(e) {
+    contentEl.innerHTML = '<div style="color:var(--accent);font-size:13px">Analysis failed: ' + e.message + '. Check your connection.</div>';
+    showToast('Analysis failed', true);
+  } finally {
+    if (btn) btn.innerHTML = '&#8635; Refresh Analysis';
+  }
 }
 
 // ══════════════════════════════════════
@@ -3042,7 +3250,7 @@ async function renderPracticeAvailGrid() {
   week.forEach((ds, di) => {
     const isPast = ds < today;
     const d = new Date(ds+'T12:00:00');
-    html += '<th class="match-date" style="' + ((isPast || isNoMatch) ? 'opacity:0.45' : '') + '">' +
+    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
       WEEKDAY_LABELS[di] + '<br><span style="font-size:9px;color:var(--text-dim)">' +
       (d.getMonth()+1)+'/'+d.getDate() + '</span></th>';
   });
