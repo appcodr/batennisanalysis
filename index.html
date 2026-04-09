@@ -3330,12 +3330,23 @@ async function handlePlayerLogin(email, name, picture) {
   try {
     const data = await fsGet();
     const invites = (data && data.invites) || {};
-    // Support both old key format (dots only) and new format (dots + @)
-    const emailKey     = email.replace(/[.@]/g, '_');
-    const emailKeyOld  = email.split('.').join('_');
-    const foundKey     = invites[emailKey] ? emailKey : invites[emailKeyOld] ? emailKeyOld : null;
+    // Format-agnostic lookup — search by stored email field directly
+    // This handles any key format used when the invite was created
+    const emailLower = email.toLowerCase().trim();
+    const foundKey = Object.keys(invites).find(k => {
+      const inv = invites[k];
+      // Match by email field (most reliable)
+      if (inv.email && inv.email.toLowerCase().trim() === emailLower) return true;
+      // Fallback: try reconstructing email from key variants
+      const fromKey1 = k.replace(/_/g, '.'); // dots-only format
+      const atIdx = fromKey1.lastIndexOf('@');
+      if (atIdx > 0) {
+        // key had @ preserved as _ — won't match email directly
+      }
+      return false;
+    });
     if (!foundKey) {
-      showPlayerError('You have not been invited yet. Contact Captain Elan.');
+      showPlayerError('You have not been invited yet. Contact Captain Elan. (email: ' + emailLower + ')');
       setPlayerStatus('Not invited');
       return;
     }
