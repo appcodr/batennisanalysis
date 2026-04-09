@@ -1244,7 +1244,7 @@
         <div style="background:var(--surface);border:1px solid rgba(0,180,216,0.25);border-radius:var(--radius);overflow:hidden">
           <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
             <div style="width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 6px var(--teal)"></div>
-            <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);font-weight:500">AI Analysis</span>
+            <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);font-weight:500">Analysis</span>
             <span style="font-size:11px;color:var(--text-dim);margin-left:auto" id="ai-analysis-timestamp"></span>
           </div>
           <div id="ai-analysis-content" style="padding:18px 20px;font-size:14px;line-height:1.75;color:var(--text)"></div>
@@ -2254,7 +2254,8 @@ function renderCombos() {
   const labelEl = document.getElementById('combos-section-label');
   if (appData.lastAnalysis && analysisBlock && analysisContent) {
     const text = appData.lastAnalysis.text;
-    const html = text
+    // If already HTML (from rule-based engine), use directly; otherwise render markdown
+    const html = appData.lastAnalysis.isHtml ? text : text
       .replace(/### (.+)/g, '<h3>$1</h3>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/^- (.+)$/gm, '<li>$1</li>')
@@ -2262,7 +2263,7 @@ function renderCombos() {
       .replace(/\n\n/g, '</p><p>')
       .replace(/(Singles Line \d:|Doubles Line \d:)/g,
         '<strong style="color:var(--teal)">$1</strong>');
-    analysisContent.innerHTML = '<p>' + html + '</p>';
+    analysisContent.innerHTML = appData.lastAnalysis.isHtml ? html : '<p>' + html + '</p>';
     analysisBlock.style.display = 'block';
     if (analysisTs) analysisTs.textContent = 'Updated ' + new Date(appData.lastAnalysis.timestamp).toLocaleString();
     if (labelEl) labelEl.style.display = 'block';
@@ -2322,592 +2323,360 @@ async function refreshCombos() {
 }
 
 async function refreshAnalysis() {
-  // Step 1: recompute combo stats
+  // Step 1: recompute combo stats from practice sessions
   await refreshCombos();
 
-  // Step 2: Build context for Claude
   const sessions  = appData.practiceSessions || [];
-  const combos    = appData.doublesCombos || [];
-  const lines     = appData.playerLines || [];
-  const history   = appData.matchHistory || [];
+  const combos    = appData.doublesCombos    || [];
+  const lines     = appData.playerLines      || [];
+  const history   = appData.matchHistory     || [];
+  const prefs     = appData.rosterPrefs      || {};
 
-  // Singles stats from practice
-  const singlesMap = {};
+  // ── Collect singles W/L per player from practice ──
+  const singlesStats = {};
   sessions.forEach(s => {
     (s.matches || []).forEach(m => {
       if (m.type !== 'singles') return;
-      const p = (m.p1 || '').trim();
-      if (!p || p === '—') return;
-      if (!singlesMap[p]) singlesMap[p] = { wins: 0, losses: 0 };
-      if (m.result === 'win') singlesMap[p].wins++; else singlesMap[p].losses++;
+      const players = [m.p1, m.p2].map(p => (p||'').trim()).filter(p => p && p !== '—');
+      players.forEach((p, i) => {
+        if (!singlesStats[p]) singlesStats[p] = { wins:0, losses:0 };
+        const won = (i===0 && m.result==='win') || (i===1 && m.result==='loss');
+        if (won) singlesStats[p].wins++; else singlesStats[p].losses++;
+      });
     });
   });
 
-  const rosterInfo = ROSTER.map(p => {
-    const pref = (appData.rosterPrefs && appData.rosterPrefs[p.name]) || p.pref || 'both';
-    const s = singlesMap[p.name] || { wins: 0, losses: 0 };
-    const comboData = combos.filter(c => c.p1 === p.name || c.p2 === p.name);
-    const doublesW = comboData.reduce((sum,c)=>sum+c.wins,0);
-    const doublesL = comboData.reduce((sum,c)=>sum+c.losses,0);
-    return p.name + ' (NTRP ' + p.ntrp + ', pref:' + pref +
-      ', singles ' + s.wins + 'W-' + s.losses + 'L' +
-      ', doubles ' + doublesW + 'W-' + doublesL + 'L)';
-  }).join('\n');
+  // ── Collect doubles W/L per player from practice ──
+  const doublesStats = {};
+  sessions.forEach(s => {
+    (s.matches || []).forEach(m => {
+      if (m.type !== 'doubles') return;
+      const ourTeam = (m.p1||'').split('&').map(p=>p.trim()).filter(Boolean);
+      ourTeam.forEach(p => {
+        if (!doublesStats[p]) doublesStats[p] = { wins:0, losses:0 };
+        if (m.result === 'win') doublesStats[p].wins++; else doublesStats[p].losses++;
+      });
+    });
+  });
 
-  const combosInfo = combos.length
-    ? combos.map(c => {
+  // ── Score each player for singles suitability ──
+  // Factors: NTRP, preference, singles W/L record
+  function winRate(stat) {
+    const tot = (stat.wins||0) + (stat.losses||0);
+    return tot > 0 ? stat.wins / tot : null;
+  }
+
+  function singlesScore(p) {
+    const pref   = prefs[p.name] || p.pref || 'both';
+    const stat   = singlesStats[p.name] || { wins:0, losses:0 };
+    const wr     = winRate(stat);
+    let score    = p.ntrp * 20; // base: NTRP
+    if (pref === 'singles') score += 15;
+    if (pref === 'doubles') score -= 15;
+    if (wr !== null)        score += (wr - 0.5) * 30; // ±15 pts for win rate
+    return score;
+  }
+
+  function doublesScore(p1name, p2name) {
+    const combo  = combos.find(c =>
+      (c.p1===p1name && c.p2===p2name) || (c.p1===p2name && c.p2===p1name)
+    );
+    const wr     = combo ? winRate(combo) : null;
+    const p1     = ROSTER.find(r=>r.name===p1name) || { ntrp:4.0 };
+    const p2     = ROSTER.find(r=>r.name===p2name) || { ntrp:4.0 };
+    let score    = (p1.ntrp + p2.ntrp) * 10;
+    const pref1  = prefs[p1name] || 'both';
+    const pref2  = prefs[p2name] || 'both';
+    if (pref1 === 'doubles') score += 8;
+    if (pref2 === 'doubles') score += 8;
+    if (pref1 === 'singles') score -= 8;
+    if (pref2 === 'singles') score -= 8;
+    if (wr !== null)         score += (wr - 0.5) * 40; // ±20 pts for combo win rate
+    return { score, wr, wins: combo ? combo.wins : 0, losses: combo ? combo.losses : 0 };
+  }
+
+  // ── Build singles analysis ──
+  const rosterScored = ROSTER.map(p => ({
+    ...p,
+    sScore: singlesScore(p),
+    sStat:  singlesStats[p.name] || { wins:0, losses:0 },
+    dStat:  doublesStats[p.name] || { wins:0, losses:0 },
+    pref:   prefs[p.name] || p.pref || 'both',
+  })).sort((a,b) => b.sScore - a.sScore);
+
+  const curSingles = lines.filter(l=>l.type==='singles').sort((a,b)=>a.line-b.line);
+  const curDoubles = lines.filter(l=>l.type==='doubles').sort((a,b)=>a.line-b.line);
+
+  function pct(stat) {
+    const t = (stat.wins||0)+(stat.losses||0);
+    return t ? Math.round(stat.wins/t*100)+'%' : 'no data';
+  }
+  function record(stat) {
+    return (stat.wins||0)+'-'+(stat.losses||0);
+  }
+
+  // ── Singles section ──
+  let singlesHtml = '<h3>Singles Lines</h3>';
+
+  // Current assignments
+  singlesHtml += '<div style="margin-bottom:14px">';
+  singlesHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Current Assignments</div>';
+  curSingles.forEach(l => {
+    const p = ROSTER.find(r=>r.name===l.player);
+    const stat = singlesStats[l.player] || {wins:0,losses:0};
+    const pref = prefs[l.player] || 'both';
+    const wr = winRate(stat);
+    const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+    singlesHtml +=
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">' +
+        '<div style="font-size:12px;color:var(--text-dim);min-width:60px">Line ' + l.line + '</div>' +
+        '<div style="flex:1">' +
+          '<span style="font-weight:500">' + (l.player||'—') + '</span>' +
+          '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">NTRP ' + (p?p.ntrp.toFixed(1):'?') + ' · ' + pref + '</span>' +
+        '</div>' +
+        '<div style="font-family:var(--font-mono,monospace);font-size:13px;color:' + wrColor + '">' +
+          record(stat) + (stat.wins+stat.losses>0 ? ' ('+pct(stat)+')' : '') +
+        '</div>' +
+      '</div>';
+  });
+  singlesHtml += '</div>';
+
+  // Top 5 by singles score
+  singlesHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Rankings by Suitability</div>';
+  singlesHtml += '<div style="margin-bottom:14px">';
+  rosterScored.slice(0,5).forEach((p,i) => {
+    const stat = p.sStat;
+    const wr = winRate(stat);
+    const isCurrentS1 = curSingles[0] && curSingles[0].player === p.name;
+    const isCurrentS2 = curSingles[1] && curSingles[1].player === p.name;
+    const tag = isCurrentS1 ? '← S1' : isCurrentS2 ? '← S2' : '';
+    const tagColor = (isCurrentS1||isCurrentS2) ? 'var(--teal)' : 'transparent';
+    const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+    singlesHtml +=
+      '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;margin-bottom:4px;background:' +
+        ((isCurrentS1||isCurrentS2)?'rgba(0,180,216,0.06)':'var(--clay-light)') + '">' +
+        '<div style="font-size:12px;color:var(--text-dim);min-width:18px;text-align:center">' + (i+1) + '</div>' +
+        '<div style="flex:1">' +
+          '<span style="font-weight:500">' + p.name + '</span>' +
+          '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' + p.pref + ' · NTRP ' + p.ntrp.toFixed(1) + '</span>' +
+        '</div>' +
+        '<div style="font-family:var(--font-mono,monospace);font-size:12px;color:' + wrColor + '">' + record(stat) + (stat.wins+stat.losses>0?'  '+pct(stat):'') + '</div>' +
+        '<div style="font-size:11px;color:' + tagColor + ';min-width:30px;text-align:right;font-weight:500">' + tag + '</div>' +
+      '</div>';
+  });
+  singlesHtml += '</div>';
+
+  // Singles recommendation
+  const recS1 = rosterScored[0];
+  const recS2 = rosterScored.find((p,i)=>i>0&&p.name!==recS1.name);
+  const s1Match = curSingles[0] && curSingles[0].player === recS1.name;
+  const s2Match = curSingles[1] && curSingles[1].player === recS2?.name;
+
+  if (s1Match && s2Match) {
+    singlesHtml += '<div class="recommend">✓ Current singles assignments look optimal based on NTRP, preference, and practice win rates.</div>';
+  } else {
+    singlesHtml += '<div class="recommend">Recommended: <strong>' + recS1.name + '</strong> on Line 1' +
+      (recS2 ? ', <strong>' + recS2.name + '</strong> on Line 2' : '') + '.</div>';
+  }
+
+  // ── Doubles section ──
+  let doublesHtml = '<h3>Doubles Lines</h3>';
+
+  // Current doubles assignments with stats
+  doublesHtml += '<div style="margin-bottom:14px">';
+  doublesHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Current Partnerships</div>';
+  curDoubles.forEach(l => {
+    const { score, wr, wins, losses } = doublesScore(l.player1, l.player2);
+    const tot = wins + losses;
+    const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+    const p1 = ROSTER.find(r=>r.name===l.player1);
+    const p2 = ROSTER.find(r=>r.name===l.player2);
+    doublesHtml +=
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">' +
+        '<div style="font-size:12px;color:var(--text-dim);min-width:60px">Line ' + l.line + '</div>' +
+        '<div style="flex:1">' +
+          '<span style="font-weight:500">' + (l.player1||'—') + '</span>' +
+          '<span style="color:var(--text-dim);margin:0 6px">&amp;</span>' +
+          '<span style="font-weight:500">' + (l.player2||'—') + '</span>' +
+          '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' +
+            (p1?p1.ntrp.toFixed(1):'?') + ' / ' + (p2?p2.ntrp.toFixed(1):'?') +
+          '</span>' +
+        '</div>' +
+        '<div style="font-family:var(--font-mono,monospace);font-size:13px;color:' + wrColor + '">' +
+          (tot>0 ? wins+'-'+losses+' ('+Math.round((wins/tot)*100)+'%)' : 'no data') +
+        '</div>' +
+      '</div>';
+  });
+  doublesHtml += '</div>';
+
+  // Best combo pairs from practice data
+  if (combos.length) {
+    const sortedCombos = [...combos]
+      .filter(c => c.wins+c.losses > 0)
+      .sort((a,b) => {
+        const aw = a.wins/(a.wins+a.losses), bw = b.wins/(b.wins+b.losses);
+        return bw - aw || (b.wins+b.losses)-(a.wins+a.losses);
+      });
+
+    if (sortedCombos.length) {
+      doublesHtml += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Best Partnerships from Practice</div>';
+      doublesHtml += '<div style="margin-bottom:14px">';
+      sortedCombos.slice(0,6).forEach((c,i) => {
         const tot = c.wins + c.losses;
-        const pct = tot ? Math.round(c.wins/tot*100) : 0;
-        return c.p1 + ' & ' + c.p2 + ': ' + c.wins + 'W-' + c.losses + 'L (' + pct + '% win rate)';
-      }).join('\n')
-    : 'No doubles data yet';
+        const wr = c.wins / tot;
+        const wrColor = wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+        const medal = i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+        const isCurrentPair = curDoubles.some(l =>
+          (l.player1===c.p1&&l.player2===c.p2)||(l.player1===c.p2&&l.player2===c.p1)
+        );
+        doublesHtml +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;margin-bottom:4px;background:' +
+          (isCurrentPair?'rgba(0,180,216,0.06)':'var(--clay-light)') + '">' +
+            '<span style="font-size:14px;min-width:24px">' + medal + '</span>' +
+            '<div style="flex:1;font-size:13px">' +
+              '<strong>' + c.p1 + '</strong> &amp; <strong>' + c.p2 + '</strong>' +
+              (isCurrentPair?'<span style="font-size:10px;color:var(--teal);margin-left:8px">← current</span>':'') +
+            '</div>' +
+            '<div style="font-family:var(--font-mono,monospace);font-size:13px;color:' + wrColor + '">' +
+              c.wins+'-'+c.losses+' ('+Math.round(wr*100)+'%)' +
+            '</div>' +
+          '</div>';
+      });
+      doublesHtml += '</div>';
+    }
+  }
 
-  const currentLines = lines.map(l =>
-    l.type === 'singles'
-      ? 'Singles Line ' + l.line + ': ' + (l.player||'—')
-      : 'Doubles Line ' + l.line + ': ' + (l.player1||'—') + ' & ' + (l.player2||'—')
-  ).join('\n');
+  // ── Key Observations ──
+  let obsHtml = '<h3>Key Observations</h3><ul>';
+  const totalSessions = sessions.length;
+  const totalMatches  = sessions.reduce((s,sess)=>s+(sess.matches||[]).length,0);
+  const seasonW = history.filter(m=>m.result==='win').length;
+  const seasonL = history.filter(m=>m.result==='loss').length;
 
-  const seasonRecord = history.length
-    ? history.filter(m=>m.result==='win').length + 'W-' + history.filter(m=>m.result==='loss').length + 'L'
-    : 'No matches yet';
+  obsHtml += '<li>Season record: <strong>' + seasonW + 'W – ' + seasonL + 'L</strong>' +
+    (totalSessions>0 ? ' · ' + totalSessions + ' practice sessions · ' + totalMatches + ' practice matches logged' : '') + '</li>';
 
-  const prompt = `You are a USTA tennis team analyst. Analyze this team data for "Baseline Authority" competing in USTA Spring Adult 18+ WeekEND 2026 in Austin, TX.
+  // Highlight strongest singles player
+  const topSingles = rosterScored[0];
+  const topStat = singlesStats[topSingles.name] || {wins:0,losses:0};
+  obsHtml += '<li>Strongest singles player by data: <strong>' + topSingles.name + '</strong>' +
+    (topStat.wins+topStat.losses>0 ? ' (' + record(topStat) + ' in practice, ' + pct(topStat) + ')' : ' (NTRP ' + topSingles.ntrp.toFixed(1) + ')') + '</li>';
 
-LEAGUE FORMAT: 2 singles lines + 3 doubles lines per match.
+  // Best doubles combo
+  const bestCombo = [...combos].filter(c=>c.wins+c.losses>0).sort((a,b)=>{
+    return (b.wins/(b.wins+b.losses)) - (a.wins/(a.wins+a.losses));
+  })[0];
+  if (bestCombo) {
+    const tot = bestCombo.wins + bestCombo.losses;
+    obsHtml += '<li>Best doubles partnership: <strong>' + bestCombo.p1 + ' &amp; ' + bestCombo.p2 + '</strong> ' +
+      '(' + bestCombo.wins + '-' + bestCombo.losses + ', ' + Math.round(bestCombo.wins/tot*100) + '% win rate)</li>';
+  } else {
+    obsHtml += '<li>No doubles match data yet — log practice doubles sessions to get partnership analysis.</li>';
+  }
 
-ROSTER & STATS:
-${rosterInfo}
+  // Players preferring singles not on singles line
+  const singlesPreferPlayers = ROSTER.filter(p => (prefs[p.name]||'both')==='singles');
+  const singlesLineNames = curSingles.map(l=>l.player);
+  const missedSingles = singlesPreferPlayers.filter(p=>!singlesLineNames.includes(p.name));
+  if (missedSingles.length) {
+    obsHtml += '<li><strong>' + missedSingles.map(p=>p.name).join(', ') + '</strong> prefer singles but are not currently on a singles line — consider rotating them in.</li>';
+  }
 
-CURRENT LINE ASSIGNMENTS:
-${currentLines}
+  // Players preferring doubles not on doubles line
+  const doublesLineNames = new Set(curDoubles.flatMap(l=>[l.player1,l.player2]));
+  const doublesPreferPlayers = ROSTER.filter(p => (prefs[p.name]||'both')==='doubles' && !doublesLineNames.has(p.name));
+  if (doublesPreferPlayers.length) {
+    obsHtml += '<li><strong>' + doublesPreferPlayers.map(p=>p.name).join(', ') + '</strong> prefer doubles but are not in the current doubles lineup.</li>';
+  }
 
-DOUBLES PARTNERSHIP STATS (from practice):
-${combosInfo}
+  obsHtml += '</ul>';
 
-SEASON RECORD: ${seasonRecord}
+  // ── Recommended Lineup ──
+  let recHtml = '<h3>Recommended Lineup</h3>';
 
-Please provide:
+  // Singles: top 2 by singles score who prefer singles or both
+  const recSinglesCandidates = rosterScored.filter(p => p.pref !== 'doubles');
+  const recS1p = recSinglesCandidates[0];
+  const recS2p = recSinglesCandidates[1];
 
-### Singles Line Analysis
-Analyze the current singles line assignments. Who is performing best? Who should be on Singles Line 1 vs Line 2? Note any players who prefer singles.
-
-### Doubles Line Analysis
-Analyze the doubles partnerships. Which pairings have the best win rates? Any chemistry issues? Suggest optimal pairings for Lines 1, 2, and 3.
-
-### Recommended Lineup
-Give a concrete recommended lineup:
-- Singles Line 1: [name]
-- Singles Line 2: [name]
-- Doubles Line 1: [name] & [name]
-- Doubles Line 2: [name] & [name]
-- Doubles Line 3: [name] & [name]
-
-### Key Observations
-2-3 bullet points on what the data shows — strengths, weaknesses, patterns to watch.
-
-Be specific, data-driven, and concise. Format using the section headers above. Use player first names only for readability.`;
-
-  // Step 3: Show loading state
-  const btn = document.getElementById('refresh-analysis-btn');
-  const block = document.getElementById('ai-analysis-block');
-  const contentEl = document.getElementById('ai-analysis-content');
-  const labelEl = document.getElementById('combos-section-label');
-  if (btn) btn.innerHTML = '<span class="analysis-spinner"></span> Analysing…';
-  block.style.display = 'block';
-  contentEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px"><span class="analysis-spinner"></span> Claude is analysing your team data…</div>';
-
-  // Step 4: Call Claude API
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      })
+  // Doubles: use best combo pairs, fill remaining slots by doubles score
+  // Assign top combo pairs first
+  const usedInDoubles = new Set([recS1p?.name, recS2p?.name]);
+  const doublesCandidates = ROSTER.filter(p => !usedInDoubles.has(p.name) && (prefs[p.name]||'both') !== 'singles');
+  
+  // Score all possible pairs among doubles candidates
+  const pairScores = [];
+  doublesCandidates.forEach((p1,i) => {
+    doublesCandidates.slice(i+1).forEach(p2 => {
+      const { score, wr } = doublesScore(p1.name, p2.name);
+      pairScores.push({ p1:p1.name, p2:p2.name, score, wr });
     });
-    const data = await resp.json();
-    const text = data.content && data.content[0] ? data.content[0].text : 'No analysis returned.';
+  });
+  pairScores.sort((a,b) => b.score - a.score);
 
-    // Render markdown-lite
-    const html = text
-      .replace(/### (.+)/g, '<h3>$1</h3>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-      .replace(/\n\n/g, '</p><p>')
-      .replace(/^(?!<[hul])/gm, '')
-      .replace(/(Singles Line \d:|Doubles Line \d:|Singles Line 1:|Singles Line 2:)/g,
-        '<strong style="color:var(--teal)">$1</strong>');
-
-    contentEl.innerHTML = '<p>' + html + '</p>';
-
-    // Timestamp
-    const ts = document.getElementById('ai-analysis-timestamp');
-    if (ts) ts.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    if (labelEl) labelEl.style.display = 'block';
-
-    // Save analysis to appData
-    appData.lastAnalysis = { text, timestamp: Date.now() };
-    await persistData();
-    showToast('Analysis complete!');
-  } catch(e) {
-    contentEl.innerHTML = '<div style="color:var(--accent);font-size:13px">Analysis failed: ' + e.message + '. Check your connection.</div>';
-    showToast('Analysis failed', true);
-  } finally {
-    if (btn) btn.innerHTML = '&#8635; Refresh Analysis';
-  }
-}
-
-// ══════════════════════════════════════
-// RENDER PRACTICE LOG
-// ══════════════════════════════════════
-function renderPracticeMatch(m) {
-  // Reuse parseSets from scores tab
-  const sets = parseSets(m.score, m.result);
-  const isWin = m.result === 'win';
-  const isSingles = m.type === 'singles';
-
-  // Set columns — same design as season scorecard but slightly compact
-  let setCols = '';
-  if (!sets.length || m.score === '—') {
-    setCols = '<div class="set-col"><div class="set-score" style="font-size:12px;color:var(--text-dim)">—</div></div>';
-  } else {
-    setCols = sets.map((s, i) => {
-      const ourWon = s.our > s.their;
-      const label  = s.isTiebreak ? 'TB' : ('S' + (i+1));
-      return '<div class="set-col' + (s.isTiebreak ? ' tiebreak' : '') + '">' +
-        '<div class="set-label">' + label + '</div>' +
-        '<div class="set-score ' + (ourWon ? 'winner' : 'loser') + '" style="font-size:17px">' + s.our + '</div>' +
-        '<div class="set-score ' + (!ourWon ? 'winner' : 'loser') + '" style="font-size:17px">' + s.their + '</div>' +
-      '</div>';
-    }).join('');
-  }
-
-  let ourSets = sets.filter(s => s.our > s.their).length;
-  let theirSets = sets.filter(s => s.their > s.our).length;
-
-  const typeTag = '<span style="font-size:10px;padding:2px 8px;border-radius:100px;background:' +
-    (isSingles ? 'rgba(233,69,96,0.12)' : 'rgba(0,180,216,0.12)') + ';color:' +
-    (isSingles ? 'var(--accent)' : 'var(--teal)') + ';border:1px solid ' +
-    (isSingles ? 'rgba(233,69,96,0.2)' : 'rgba(0,180,216,0.2)') + '">' +
-    (isSingles ? 'Singles' : 'Doubles') + '</span>';
-
-  return '<div class="scorecard ' + (isWin ? 'win' : 'loss') + '" style="margin-bottom:8px">' +
-    '<div class="scorecard-body">' +
-      '<div class="scorecard-players" style="padding:10px 14px;gap:8px">' +
-        '<div class="scorecard-row">' +
-          '<div class="serve-dot ' + (isWin ? 'show' : '') + '"></div>' +
-          '<div class="player-name ' + (isWin ? 'winner' : 'loser') + '" style="font-size:13px">' + (m.p1||'—') + '</div>' +
-          typeTag +
-        '</div>' +
-        '<div class="scorecard-row">' +
-          '<div class="serve-dot ' + (!isWin ? 'show' : '') + '"></div>' +
-          '<div class="player-name ' + (!isWin ? 'winner' : 'loser') + '" style="font-size:13px">' + (m.p2||'—') + '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="scorecard-sets">' +
-        setCols +
-        '<div class="result-col" style="min-width:44px;padding:8px 6px">' +
-          '<div class="result-badge ' + (isWin ? 'win' : 'loss') + '" style="font-size:12px;padding:3px 8px">' + (isWin ? 'W' : 'L') + '</div>' +
-          (sets.length ? '<div class="sets-won-badge">' + ourSets + '–' + theirSets + '</div>' : '') +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-  '</div>';
-}
-
-function renderPracticeLog() {
-  const container = document.getElementById('practice-log-list');
-  const sessions  = [...(appData.practiceSessions || [])].reverse();
-
-  if (!sessions.length) {
-    container.innerHTML = '<div class="empty-state">' +
-      '<div class="empty-icon">&#128203;</div>' +
-      '<div class="empty-title">No sessions logged yet</div>' +
-      '<div class="empty-sub">Use the "Log Session" tab to record practice scores</div>' +
-    '</div>';
-    return;
-  }
-
-  container.innerHTML = sessions.map((s, ridx) => {
-    const realIdx = appData.practiceSessions.length - 1 - ridx;
-
-    // ── Weather strip ──
-    let weatherHtml = '';
-    if (s.weather) {
-      const wx = s.weather;
-      weatherHtml =
-        '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;' +
-        'background:rgba(0,180,216,0.06);border-bottom:1px solid var(--border);flex-wrap:wrap">' +
-          '<span style="font-size:16px">' + wxIcon(wx.code) + '</span>' +
-          '<span style="font-size:13px;font-weight:500;color:var(--text)">' + wx.temp + '°F</span>' +
-          '<span style="font-size:12px;color:var(--text-muted)">feels ' + wx.feels + '°F · ' + wxCode(wx.code) + '</span>' +
-          '<span style="font-size:12px;color:var(--text-muted)">&#128168; ' + wx.wind + ' mph ' + wx.windDir + ' · gusts ' + wx.gusts + ' mph</span>' +
-          '<span style="font-size:12px;color:var(--text-muted)">&#128167; ' + wx.humidity + '%</span>' +
-          (parseFloat(wx.precip) > 0 ? '<span style="font-size:12px;color:var(--warning)">&#127783; ' + wx.precip + '"</span>' : '') +
-          '<span style="font-size:11px;color:var(--text-dim);margin-left:auto">Austin, TX · ' + (s.time||'') + '</span>' +
-        '</div>';
-    }
-
-    // ── Match scorecards ──
-    const matches = s.matches || [];
-    let matchesHtml = '';
-    if (matches.length) {
-      matchesHtml = '<div style="padding:10px 14px;display:flex;flex-direction:column;gap:0">' +
-        matches.map(m => renderPracticeMatch(m)).join('') +
-      '</div>';
-    } else {
-      matchesHtml = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">No match scores recorded</div>';
-    }
-
-    // ── Notes ──
-    const notesHtml = s.notes
-      ? '<div style="margin:0 14px 12px;font-size:13px;color:var(--text-muted);font-style:italic;' +
-        'border-left:2px solid var(--accent);padding-left:12px">' + s.notes + '</div>'
-      : '';
-
-    return '<div class="session-item" style="padding:0;overflow:hidden">' +
-      // Session header
-      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">' +
-        '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--teal)">' + s.date + '</span>' +
-        (s.time ? '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">' + s.time + '</span>' : '') +
-        '<span style="font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(245,166,35,0.12);color:var(--warning)">' + (s.type||'Practice') + '</span>' +
-        '<span style="font-size:11px;color:var(--text-dim)">' + (matches.length) + ' match' + (matches.length!==1?'es':'') + '</span>' +
-        '<button onclick="deleteSession(' + realIdx + ')" style="margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 4px" title="Delete session">✕</button>' +
-      '</div>' +
-      weatherHtml +
-      matchesHtml +
-      notesHtml +
-    '</div>';
-  }).join('');
-
-  document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
-}
-
-
-// ══════════════════════════════════════
-// SESSION FORM
-// ══════════════════════════════════════
-let matchEntryCount = 0;
-
-// Build player picker HTML: dropdown from roster + optional free-text override
-function playerPickerHtml(idPrefix, label) {
-  const opts = ROSTER.map(p =>
-    `<option value="${p.name}">${p.name} (${p.ntrp.toFixed(1)})</option>`
-  ).join('');
-  return `
-    <div class="form-group">
-      <label class="form-label">${label}</label>
-      <select class="form-select player-pick" id="${idPrefix}-sel" style="margin-bottom:6px"
-        onchange="toggleCustomInput('${idPrefix}')">
-        <option value="">— From roster —</option>
-        ${opts}
-        <option value="__other__">Other (not on roster)</option>
-      </select>
-      <input class="form-input player-custom" id="${idPrefix}-txt"
-        placeholder="Enter opponent name…"
-        style="margin-bottom:0;display:none" />
-    </div>`;
-}
-
-function toggleCustomInput(idPrefix) {
-  const sel = document.getElementById(idPrefix + '-sel');
-  const txt = document.getElementById(idPrefix + '-txt');
-  txt.style.display = sel.value === '__other__' ? 'block' : 'none';
-  if (sel.value !== '__other__') txt.value = '';
-}
-
-function getPlayerVal(idPrefix) {
-  const sel = document.getElementById(idPrefix + '-sel');
-  const txt = document.getElementById(idPrefix + '-txt');
-  if (sel.value === '__other__') return txt.value.trim() || 'Unknown';
-  return sel.value || '—';
-}
-
-function addMatchEntry() {
-  matchEntryCount++;
-  const id = matchEntryCount;
-  const div = document.createElement('div');
-  div.style.cssText = 'background:var(--clay-light);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;position:relative';
-  div.id = `match-entry-${id}`;
-  div.innerHTML = `
-    <button onclick="this.closest('[id^=match-entry]').remove()"
-      style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px">✕</button>
-
-    <!-- Match type row -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)">Type</span>
-      <div style="display:flex;gap:6px">
-        <button type="button" class="type-btn active" id="type-s-${id}"
-          onclick="setMatchType(${id},'singles')"
-          style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer;font-family:var(--font-sans,sans-serif)">
-          Singles
-        </button>
-        <button type="button" class="type-btn" id="type-d-${id}"
-          onclick="setMatchType(${id},'doubles')"
-          style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:var(--font-sans,sans-serif)">
-          Doubles
-        </button>
-      </div>
-      <input type="hidden" id="match-type-${id}" value="singles" />
-    </div>
-
-    <!-- Singles section -->
-    <div id="singles-section-${id}">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        ${playerPickerHtml(`s1-${id}`, 'Our Player')}
-        ${playerPickerHtml(`s2-${id}`, 'Opponent')}
-      </div>
-    </div>
-
-    <!-- Doubles section (hidden by default) -->
-    <div id="doubles-section-${id}" style="display:none">
-      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:8px">Our Team</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        ${playerPickerHtml(`d1a-${id}`, 'Player A')}
-        ${playerPickerHtml(`d1b-${id}`, 'Player B')}
-      </div>
-      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Opponents</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        ${playerPickerHtml(`d2a-${id}`, 'Player A')}
-        ${playerPickerHtml(`d2b-${id}`, 'Player B')}
-      </div>
-    </div>
-
-    <!-- Score + result -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">
-      <div class="form-group">
-        <label class="form-label">Score (e.g. 6-3, 6-4)</label>
-        <input class="form-input match-score" placeholder="6-3, 6-4" style="margin-bottom:0" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Result (our side)</label>
-        <select class="form-select match-result" style="margin-bottom:0">
-          <option value="win">Win ✓</option>
-          <option value="loss">Loss ✗</option>
-        </select>
-      </div>
-    </div>`;
-  document.getElementById('match-entries').appendChild(div);
-}
-
-function setMatchType(id, type) {
-  document.getElementById(`match-type-${id}`).value = type;
-  const sBtn = document.getElementById(`type-s-${id}`);
-  const dBtn = document.getElementById(`type-d-${id}`);
-  const sSection = document.getElementById(`singles-section-${id}`);
-  const dSection = document.getElementById(`doubles-section-${id}`);
-  if (type === 'singles') {
-    sBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer;font-family:var(--font-sans,sans-serif)';
-    dBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:var(--font-sans,sans-serif)';
-    sSection.style.display = 'block';
-    dSection.style.display = 'none';
-  } else {
-    dBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--teal);background:rgba(0,180,216,0.15);color:var(--teal);cursor:pointer;font-family:var(--font-sans,sans-serif)';
-    sBtn.style.cssText = 'padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-family:var(--font-sans,sans-serif)';
-    sSection.style.display = 'none';
-    dSection.style.display = 'block';
-  }
-}
-
-// ══════════════════════════════════════
-// WEATHER — Open-Meteo (free, no key, historical+current)
-// Austin TX: lat 30.2672, lon -97.7431
-// ══════════════════════════════════════
-const WX_LAT = 30.2672, WX_LON = -97.7431;
-
-function windDir(deg) {
-  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  return dirs[Math.round(deg / 22.5) % 16];
-}
-
-function wxCode(code) {
-  const map = {
-    0:'Clear',1:'Mostly Clear',2:'Partly Cloudy',3:'Overcast',
-    45:'Foggy',48:'Icy Fog',51:'Light Drizzle',53:'Drizzle',55:'Heavy Drizzle',
-    61:'Light Rain',63:'Rain',65:'Heavy Rain',71:'Light Snow',73:'Snow',75:'Heavy Snow',
-    80:'Showers',81:'Heavy Showers',82:'Violent Showers',95:'Thunderstorm',96:'Hail Storm'
-  };
-  return map[code] || 'Mixed';
-}
-
-function wxIcon(code) {
-  if (code === 0) return '☀️';
-  if (code <= 2) return '🌤️';
-  if (code === 3) return '☁️';
-  if (code <= 48) return '🌫️';
-  if (code <= 67) return '🌧️';
-  if (code <= 77) return '❄️';
-  if (code <= 82) return '🌦️';
-  return '⛈️';
-}
-
-let cachedWeather = null;
-
-async function fetchWeatherForDate(dateStr, hour) {
-  // Use historical API for past dates, forecast for future/today
-  const today = new Date().toISOString().slice(0,10);
-  const isPast = dateStr < today;
-  const url = isPast
-    ? `https://archive-api.open-meteo.com/v1/archive?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`
-    : `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`;
-
-  const res = await fetch(url);
-  const data = await res.json();
-  const h = data.hourly;
-  const i = Math.min(hour, h.time.length - 1);
-  return {
-    temp:      Math.round(h.temperature_2m[i]),
-    feels:     Math.round(h.apparent_temperature[i]),
-    precip:    h.precipitation[i].toFixed(2),
-    wind:      Math.round(h.windspeed_10m[i]),
-    gusts:     Math.round(h.windgusts_10m[i]),
-    windDir:   windDir(h.winddirection_10m[i]),
-    humidity:  h.relativehumidity_2m[i],
-    code:      h.weathercode[i],
-    time:      h.time[i]
-  };
-}
-
-let wxDebounce = null;
-async function previewWeather() {
-  const dateVal = document.getElementById('session-date').value;
-  const timeVal = document.getElementById('session-time').value || '09:00';
-  const preview = document.getElementById('weather-preview');
-  if (!dateVal) return;
-
-  clearTimeout(wxDebounce);
-  preview.innerHTML = `<span style="color:var(--accent);font-size:12px">⟳ Fetching Austin weather…</span>`;
-
-  wxDebounce = setTimeout(async () => {
-    try {
-      const hour = parseInt(timeVal.split(':')[0]);
-      const wx = await fetchWeatherForDate(dateVal, hour);
-      cachedWeather = wx;
-      preview.innerHTML = `
-        <span style="font-size:20px">${wxIcon(wx.code)}</span>
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:500;color:var(--text)">
-            ${wx.temp}°F <span style="font-size:11px;color:var(--text-muted)">feels ${wx.feels}°F</span>
-            &nbsp;·&nbsp; ${wxCode(wx.code)}
-          </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
-            💨 Wind ${wx.wind} mph ${wx.windDir} &nbsp;·&nbsp; Gusts ${wx.gusts} mph
-            &nbsp;·&nbsp; 💧 ${wx.humidity}% humidity
-            ${parseFloat(wx.precip) > 0 ? `&nbsp;·&nbsp; 🌧 ${wx.precip}" precip` : ''}
-          </div>
-        </div>`;
-    } catch(e) {
-      preview.innerHTML = `<span style="color:var(--accent);font-size:12px">Could not fetch weather — check connection</span>`;
-    }
-  }, 500);
-}
-
-async function saveSession() {
-  const date = document.getElementById('session-date').value;
-  if (!date) { showToast('Please select a date.', true); return; }
-
-  const timeVal = document.getElementById('session-time').value || '09:00';
-  const type = document.getElementById('session-type').value;
-  const notes = document.getElementById('session-notes').value.trim();
-
-  // Fetch weather if not already cached for this date/time
-  let weather = null;
-  try {
-    const preview = document.getElementById('weather-preview');
-    preview.innerHTML = `<span style="color:var(--accent);font-size:12px">⟳ Saving weather data…</span>`;
-    const hour = parseInt(timeVal.split(':')[0]);
-    weather = cachedWeather || await fetchWeatherForDate(date, hour);
-    cachedWeather = null;
-  } catch(e) { weather = null; }
-
-  const entries = document.querySelectorAll('[id^="match-entry-"]');
-  const matches = [];
-  entries.forEach(e => {
-    const entryId = e.id.replace('match-entry-', '');
-    const matchType = document.getElementById(`match-type-${entryId}`)?.value || 'singles';
-    const scoreInput = e.querySelector('.match-score');
-    const resultSel = e.querySelector('.match-result');
-    const score = scoreInput ? scoreInput.value.trim() || '—' : '—';
-    const result = resultSel ? resultSel.value : 'win';
-
-    let p1 = '', p2 = '', label = '';
-    if (matchType === 'singles') {
-      p1 = getPlayerVal(`s1-${entryId}`);
-      p2 = getPlayerVal(`s2-${entryId}`);
-      label = 'Singles';
-    } else {
-      const d1a = getPlayerVal(`d1a-${entryId}`);
-      const d1b = getPlayerVal(`d1b-${entryId}`);
-      const d2a = getPlayerVal(`d2a-${entryId}`);
-      const d2b = getPlayerVal(`d2b-${entryId}`);
-      p1 = [d1a, d1b].filter(x => x && x !== '—').join(' & ') || '—';
-      p2 = [d2a, d2b].filter(x => x && x !== '—').join(' & ') || '—';
-      label = 'Doubles';
-    }
-    if (p1 !== '—' || p2 !== '—') {
-      matches.push({ type: matchType, label, p1, p2, score, result });
-    }
+  const recPairs = [];
+  const usedInPairs = new Set();
+  pairScores.forEach(pair => {
+    if (recPairs.length >= 3) return;
+    if (usedInPairs.has(pair.p1) || usedInPairs.has(pair.p2)) return;
+    recPairs.push(pair);
+    usedInPairs.add(pair.p1);
+    usedInPairs.add(pair.p2);
   });
 
-  const session = { date, time: timeVal, type, notes, matches, weather, loggedBy: 'Elan/Rohith', timestamp: Date.now() };
-  appData.practiceSessions.push(session);
-  persistData();
+  recHtml += '<div style="background:rgba(0,200,150,0.06);border:1px solid rgba(0,200,150,0.2);border-radius:8px;padding:14px 16px;margin-bottom:10px">';
+  recHtml += '<div style="display:flex;flex-direction:column;gap:8px">';
+  if (recS1p) recHtml += '<div><span style="color:var(--accent);font-size:11px;font-weight:500;min-width:110px;display:inline-block">Singles Line 1</span><strong>' + recS1p.name + '</strong></div>';
+  if (recS2p) recHtml += '<div><span style="color:var(--accent);font-size:11px;font-weight:500;min-width:110px;display:inline-block">Singles Line 2</span><strong>' + recS2p.name + '</strong></div>';
+  recPairs.forEach((pair,i) => {
+    recHtml += '<div><span style="color:var(--teal);font-size:11px;font-weight:500;min-width:110px;display:inline-block">Doubles Line ' + (i+1) + '</span>' +
+      '<strong>' + pair.p1 + '</strong> &amp; <strong>' + pair.p2 + '</strong>' +
+      (pair.wr!==null ? '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' + Math.round(pair.wr*100) + '% win rate in practice</span>' : '') +
+    '</div>';
+  });
+  recHtml += '</div></div>';
 
-  showToast('Session saved with weather!');
-  clearForm();
-  renderPracticeLog();
-  renderScores();
-}
+  // Check if current lineup matches recommendation
+  const curS1ok = curSingles[0]?.player === recS1p?.name;
+  const curS2ok = curSingles[1]?.player === recS2p?.name;
+  const curD1ok = recPairs[0] && curDoubles[0] &&
+    ((curDoubles[0].player1===recPairs[0].p1&&curDoubles[0].player2===recPairs[0].p2)||
+     (curDoubles[0].player1===recPairs[0].p2&&curDoubles[0].player2===recPairs[0].p1));
+  const allMatch = curS1ok && curS2ok && curD1ok;
 
-function clearForm() {
-  document.getElementById('session-date').valueAsDate = new Date();
-  document.getElementById('session-time').value = '09:00';
-  document.getElementById('session-notes').value = '';
-  document.getElementById('match-entries').innerHTML = '';
-  document.getElementById('weather-preview').innerHTML = '<span style="color:var(--text-dim)">Select date &amp; time to fetch…</span>';
-  cachedWeather = null;
-  matchEntryCount = 0;
-}
+  if (allMatch) {
+    recHtml += '<div class="recommend">✓ Current lineup matches the recommended lineup.</div>';
+  } else if (!curSingles.length && !curDoubles.length) {
+    recHtml += '<div class="warn">No lineup set yet — use the Player Lines tab to assign players.</div>';
+  } else {
+    recHtml += '<div class="warn">Current lineup differs from recommendation — review Player Lines tab.</div>';
+  }
 
-async function deleteSession(idx) {
-  if (!confirm('Delete this session?')) return;
-  appData.practiceSessions.splice(idx, 1);
-  persistData();
-  renderPracticeLog();
-  renderScores();
-  showToast('Session deleted.');
-}
+  // ── Render everything ──
+  const block     = document.getElementById('ai-analysis-block');
+  const contentEl = document.getElementById('ai-analysis-content');
+  const tsEl      = document.getElementById('ai-analysis-timestamp');
+  const labelEl   = document.getElementById('combos-section-label');
+  const statusEl  = document.getElementById('combos-status');
+  const btn       = document.getElementById('refresh-analysis-btn');
 
-// ══════════════════════════════════════
-// TOAST
-// ══════════════════════════════════════
-let toastTimer;
-function showToast(msg, isError) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show' + (isError ? ' error' : '');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.classList.remove('show'); }, 3000);
-}
+  const fullHtml = singlesHtml + doublesHtml + obsHtml + recHtml;
 
-// ══════════════════════════════════════
-// INIT
-// ══════════════════════════════════════
-async function initApp() {
-  await loadData();
-  document.getElementById('session-date').valueAsDate = new Date();
-  renderRoster();
-  renderScores();
-  renderLines();
-  renderCombos();
-  renderPracticeLog();
-  renderInviteList();
-  renderSchedule('captain-schedule-content', true);
-  previewWeather();
+  if (block)     block.style.display = 'block';
+  if (contentEl) contentEl.innerHTML = fullHtml;
+  if (tsEl)      tsEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  if (labelEl)   labelEl.style.display = 'block';
+  if (statusEl) {
+    const tot = combos.reduce((s,c)=>s+c.wins+c.losses,0);
+    statusEl.textContent = combos.length + ' partnerships · ' + tot + ' doubles matches · ' + totalSessions + ' practice sessions analysed';
+    statusEl.style.display = combos.length ? 'block' : 'none';
+  }
+  if (btn) btn.innerHTML = '&#8635; Refresh Analysis';
+
+  // Save to Firestore
+  appData.lastAnalysis = { text: fullHtml, isHtml: true, timestamp: Date.now() };
+  await persistData();
+  showToast('Analysis complete!');
 }
 
 // ══════════════════════════════════════
@@ -2953,11 +2722,9 @@ function signInWithGoogle() {
     callback: async (resp) => {
       if (resp.error) { showPlayerError('Sign-in cancelled.'); return; }
       try {
-        // Get user info from Google
         const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: 'Bearer ' + resp.access_token }
         }).then(r => r.json());
-
         await handlePlayerLogin(userInfo.email, userInfo.name, userInfo.picture);
       } catch(e) {
         showPlayerError('Sign-in failed. Try again.');
@@ -2968,47 +2735,38 @@ function signInWithGoogle() {
 }
 
 async function handlePlayerLogin(email, name, picture) {
-  setPlayerStatus('Checking invite…');
+  setPlayerStatus('Checking invite...');
   try {
-    // Load team data to check invites
     const data = await fsGet();
     const invites = (data && data.invites) || {};
-    const emailKey = email.replace(/\./g, '_');
-
+    const emailKey = email.replace(/[.@]/g, '_');
     if (!invites[emailKey]) {
       showPlayerError('You have not been invited yet. Contact Captain Elan.');
       setPlayerStatus('Not invited');
       return;
     }
-
     const invite = invites[emailKey];
     currentPlayerUser = { email, name, picture };
     currentPlayerName = invite.rosterName || name;
-
-    // Mark invite as joined
     if (!appData) appData = data || {};
     if (!appData.invites) appData.invites = {};
     appData.invites[emailKey].status = 'joined';
     appData.invites[emailKey].lastSeen = new Date().toISOString();
-    await persistData();
-
-    // Show player app
+    _suppressSaveErrors = true;
+    try { await persistData(); } catch(e) {}
+    _suppressSaveErrors = false;
     document.getElementById('player-login-screen').style.display = 'none';
     document.getElementById('player-app').style.display = 'block';
     document.getElementById('player-label').textContent = currentPlayerName;
-    const initials = currentPlayerName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    const initials = currentPlayerName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.getElementById('player-avatar').textContent = initials;
     setPlayerStatus('Live');
-
-    // Init player views — auto-jump to current week for practice
     const todayStr = new Date().toISOString().slice(0,10);
-    currentPracticeWeek = Math.max(0,
-      PRACTICE_DAYS.findIndex(w => w[w.length-1] >= todayStr));
+    currentPracticeWeek = Math.max(0, PRACTICE_DAYS.findIndex(w => w[w.length-1] >= todayStr));
     if (currentPracticeWeek < 0) currentPracticeWeek = PRACTICE_DAYS.length - 1;
     await renderAvailGrid();
     renderMyLines();
     renderSchedule('player-schedule-content', false);
-
   } catch(e) {
     showPlayerError('Connection error: ' + e.message);
     setPlayerStatus('Error');
@@ -3026,11 +2784,13 @@ function setPlayerStatus(msg) {
 }
 
 function playerLogout() {
-  currentPlayerUser = null; currentPlayerName = null;
+  currentPlayerUser = null;
+  currentPlayerName = null;
+  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
   document.getElementById('player-app').style.display = 'none';
   showLoginChoice();
-  if (typeof google !== 'undefined') {
-    google.accounts.oauth2.revoke && google.accounts.oauth2.revoke('');
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try { google.accounts.oauth2.revoke(''); } catch(e) {}
   }
 }
 
@@ -3053,403 +2813,7 @@ function switchPlayerTab(id) {
 }
 
 // ══════════════════════════════════════
-// MATCH SCHEDULE — USTA Spring Adult 18+ WeekEND 2026
-// ══════════════════════════════════════
-const MATCH_SCHEDULE = [
-  { id:'1011900929', date:'2026-04-19', time:'4:00 PM', home:'Baseline Authority', away:'Bye',              homeCapt:'Elan Vasudevan', awayCapt:'N/A',           venue:'N/A',                                    isBye:true  },
-  { id:'1011900933', date:'2026-04-26', time:'4:00 PM', home:'Baseline Authority', away:'Wilco Warriors',   homeCapt:'Elan Vasudevan', awayCapt:'Brian Winans',  venue:'Williamson County Tennis Center',        isBye:false },
-  { id:'1011900937', date:'2026-05-03', time:'4:00 PM', home:'Balcones Breakers',  away:'Baseline Authority',homeCapt:'Casey Bell',     awayCapt:'Elan Vasudevan',venue:'Balcones Country Club - Spicewood',      isBye:false },
-  { id:'1011900940', date:'2026-05-10', time:'4:00 PM', home:'Serves You Right',   away:'Baseline Authority',homeCapt:'Mark Weber',     awayCapt:'Elan Vasudevan',venue:'Old Settlers Park Tennis Courts',      isBye:false },
-  { id:'1011900942', date:'2026-05-17', time:'2:00 PM', home:'Baseline Authority', away:'SKO Great Hills',  homeCapt:'Elan Vasudevan', awayCapt:'Jacob Plotkin', venue:'Williamson County Tennis Center',        isBye:false },
-  { id:'1011900944', date:'2026-05-31', time:'4:00 PM', home:'Baseline Authority', away:'Bye',              homeCapt:'Elan Vasudevan', awayCapt:'N/A',           venue:'N/A',                                    isBye:true  },
-  { id:'1011900948', date:'2026-06-07', time:'4:00 PM', home:'Wilco Warriors',     away:'Baseline Authority',homeCapt:'Brian Winans',   awayCapt:'Elan Vasudevan',venue:'Williamson County Tennis Center',        isBye:false },
-  { id:'1011900952', date:'2026-06-14', time:'4:00 PM', home:'Baseline Authority', away:'Balcones Breakers',homeCapt:'Elan Vasudevan', awayCapt:'Casey Bell',    venue:'Williamson County Tennis Center',        isBye:false },
-  { id:'1011900955', date:'2026-06-21', time:'4:00 PM', home:'Baseline Authority', away:'Serves You Right', homeCapt:'Elan Vasudevan', awayCapt:'Mark Weber',    venue:'Williamson County Tennis Center',        isBye:false },
-  { id:'1011900957', date:'2026-06-28', time:'4:00 PM', home:'Baseline Authority', away:'SKO Great Hills',  homeCapt:'Elan Vasudevan', awayCapt:'Jacob Plotkin', venue:'Williamson County Tennis Center',        isBye:false },
-];
-
-function renderSchedule(containerId, showMatchHistory) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const today = new Date().toISOString().slice(0,10);
-  const matchHistory = (appData && appData.matchHistory) || [];
-
-  // Find next upcoming match
-  const nextMatch = MATCH_SCHEDULE.find(m => !m.isBye && m.date >= today);
-
-  // Season stats from match history
-  const wins   = matchHistory.filter(m => m.result === 'win').length;
-  const losses = matchHistory.filter(m => m.result === 'loss').length;
-
-  let html = '';
-
-  // Season summary strip
-  if (showMatchHistory && matchHistory.length > 0) {
-    html += '<div style="display:flex;gap:16px;align-items:center;margin-bottom:20px;padding:12px 16px;' +
-      'background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">' +
-      '<span style="font-size:12px;color:var(--text-muted)">Season record</span>' +
-      '<span style="font-family:var(--font-mono,monospace);font-size:18px;font-weight:600;color:var(--text)">' +
-        wins + '<span style="color:var(--text-dim);font-size:13px">W</span> – ' +
-        losses + '<span style="color:var(--text-dim);font-size:13px">L</span>' +
-      '</span>' +
-    '</div>';
-  }
-
-  MATCH_SCHEDULE.forEach(m => {
-    const isPast   = m.date < today;
-    const isNext   = !m.isBye && nextMatch && m.date === nextMatch.date;
-    const isHome = m.home === 'Baseline Authority';
-    const opponent = isHome ? m.away : m.home;
-    const oppCapt  = isHome ? m.awayCapt : m.homeCapt;
-
-    // Check if we have a result in match history for this date
-    const result = matchHistory.find(mh => mh.date === m.date);
-
-    let cardClass = 'schedule-card';
-    if (m.isBye)  cardClass += ' bye';
-    else if (isHome) cardClass += ' home';
-    else cardClass += ' away';
-    if (isPast) cardClass += ' past';
-
-    // HA badge
-    let haBadge = '';
-    if (m.isBye) {
-      haBadge = '<span class="schedule-ha-badge bye">BYE</span>';
-    } else {
-      haBadge = '<span class="schedule-ha-badge ' + (isHome ? 'home' : 'away') + '">' +
-        (isHome ? 'HOME' : 'AWAY') + '</span>';
-    }
-
-    // Next match badge
-    const nextBadge = isNext ? '<span class="schedule-next-badge">NEXT MATCH</span>' : '';
-
-    // Result chip
-    let resultChip = '';
-    if (result) {
-      resultChip = '<span class="schedule-result-chip ' + result.result + '">' +
-        (result.result === 'win' ? 'W' : 'L') + '</span>';
-    } else if (!isPast && !m.isBye) {
-      resultChip = '<span class="schedule-result-chip upcoming">Upcoming</span>';
-    }
-
-    html += '<div class="' + cardClass + '">' +
-      // Header
-      '<div class="schedule-header">' +
-        '<span class="schedule-date">' + m.date + '</span>' +
-        '<span class="schedule-time">' + m.time + '</span>' +
-        haBadge + nextBadge + resultChip +
-      '</div>' +
-      // Body
-      '<div class="schedule-body">' +
-        '<div class="schedule-teams">';
-
-    if (m.isBye) {
-      html += '<span class="schedule-team bye-label">Bye week — no match</span>';
-    } else {
-      html +=
-        '<span class="schedule-team us">Baseline Authority</span>' +
-        '<span class="schedule-vs">vs</span>' +
-        '<div>' +
-          '<div class="schedule-team them">' + opponent + '</div>' +
-          '<div style="font-size:11px;color:var(--text-dim)">Capt: ' + oppCapt + '</div>' +
-        '</div>';
-    }
-
-    html += '</div>';
-
-    // Venue
-    if (m.venue && m.venue !== 'N/A') {
-      html += '<div class="schedule-venue">📍 ' + m.venue + '</div>';
-    }
-
-    html += '</div></div>';
-  });
-
-  container.innerHTML = html;
-}
-
-// ══════════════════════════════════════
-// PRACTICE DAYS — Weekdays Apr 20 – Jun 12 2026 (8 weeks)
-// ══════════════════════════════════════
-const PRACTICE_DAYS = [
-  ['2026-04-20','2026-04-21','2026-04-22','2026-04-23','2026-04-24'],
-  ['2026-04-27','2026-04-28','2026-04-29','2026-04-30','2026-05-01'],
-  ['2026-05-04','2026-05-05','2026-05-06','2026-05-07','2026-05-08'],
-  ['2026-05-11','2026-05-12','2026-05-13','2026-05-14','2026-05-15'],
-  ['2026-05-18','2026-05-19','2026-05-20','2026-05-21','2026-05-22'],
-  ['2026-05-25','2026-05-26','2026-05-27','2026-05-28','2026-05-29'],
-  ['2026-06-01','2026-06-02','2026-06-03','2026-06-04','2026-06-05'],
-  ['2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12'],
-];
-const WEEKDAY_LABELS = ['Mon','Tue','Wed','Thu','Fri'];
-
-function practiceWeekLabel(week) {
-  const s = week[0], e = week[week.length-1];
-  const fmt = ds => { const d = new Date(ds+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); };
-  return fmt(s) + '–' + fmt(e);
-}
-
-let currentPracticeWeek = 0; // index into PRACTICE_DAYS
-
-async function cyclePracticeAvail(dateStr) {
-  if (!currentPlayerUser || !appData) return;
-  const key = 'pavail_' + currentPlayerUser.email.replace(/[.@]/g,'_');
-  if (!appData[key]) appData[key] = {};
-  const cur  = appData[key][dateStr] || 'no';
-  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur) + 1) % AVAIL_CYCLE.length];
-  appData[key][dateStr] = next;
-  _suppressSaveErrors = true;
-  await persistData();
-  _suppressSaveErrors = false;
-  renderPracticeAvailGrid();
-}
-
-function pavKey(email) {
-  return 'pavail_' + (email||'').replace(/[.@]/g,'_');
-}
-
-async function renderPracticeAvailGrid() {
-  const container = document.getElementById('practice-avail-grid');
-  const weekTabsEl = document.getElementById('practice-week-tabs');
-  if (!container) return;
-
-  // Fetch latest
-  let data = appData;
-  try { data = await fsGet() || appData; appData = data; } catch(e) {}
-
-  const invites = (data && data.invites) || {};
-  const today   = new Date().toISOString().slice(0,10);
-  const week    = PRACTICE_DAYS[currentPracticeWeek];
-
-  // Build week-picker buttons
-  if (weekTabsEl) {
-    weekTabsEl.innerHTML = PRACTICE_DAYS.map((w, i) => {
-      const isPast = w[w.length-1] < today;
-      return '<button class="practice-week-btn' + (i === currentPracticeWeek ? ' active' : '') + '"' +
-        (isPast ? ' style="opacity:0.45"' : '') +
-        ' onclick="currentPracticeWeek=' + i + ';renderPracticeAvailGrid()">' +
-        'Wk ' + (i+1) + ' · ' + practiceWeekLabel(w) +
-        '</button>';
-    }).join('');
-  }
-
-  // Build rows same as match availability
-  const rows = ROSTER.map(p => {
-    const emailKey = Object.keys(invites).find(k => invites[k].rosterName === p.name);
-    const inv   = emailKey ? invites[emailKey] : null;
-    const email = inv ? inv.email : null;
-    const isMe  = currentPlayerUser && email && email === currentPlayerUser.email;
-    const myAvail = email ? ((data && data[pavKey(email)]) || {}) : {};
-    return { name: p.name, email, isMe, avail: myAvail, joined: inv ? inv.status === 'joined' : false };
-  });
-
-  // ── Table ──
-  let html = '<table class="avail-table"><thead><tr>';
-  html += '<th>Player</th>';
-  week.forEach((ds, di) => {
-    const isPast = ds < today;
-    const d = new Date(ds+'T12:00:00');
-    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
-      WEEKDAY_LABELS[di] + '<br><span style="font-size:9px;color:var(--text-dim)">' +
-      (d.getMonth()+1)+'/'+d.getDate() + '</span></th>';
-  });
-  html += '</tr></thead><tbody>';
-
-  rows.forEach(row => {
-    html += '<tr class="' + (row.isMe ? 'me' : '') + '">';
-    html += '<td>' + row.name +
-      (row.isMe ? ' <span style="font-size:10px;opacity:0.6">(you)</span>' : '') +
-      (!row.joined && !row.isMe ? ' <span style="font-size:10px;color:var(--text-dim);opacity:0.5">—</span>' : '') +
-    '</td>';
-    week.forEach(ds => {
-      const state = row.avail[ds] || 'no';
-      const cls   = AVAIL_CLASS[state];
-      const lbl   = AVAIL_LABEL[state];
-      const isPast = ds < today;
-      if (row.isMe && !isPast) {
-        html += '<td><span class="avail-pill ' + cls + ' clickable" data-ds="' + ds +
-          '" onclick="cyclePracticeAvail(this.dataset.ds)">' + lbl + '</span></td>';
-      } else if (row.joined || row.email) {
-        html += '<td><span class="avail-pill ' + cls + '"' +
-          (isPast ? ' style="opacity:0.45"' : '') + '>' + lbl + '</span></td>';
-      } else {
-        html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
-      }
-    });
-    html += '</tr>';
-  });
-
-  // Summary row
-  html += '<tr style="border-top:2px solid var(--border)">';
-  html += '<td style="font-size:11px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding-top:10px">Yes count</td>';
-  week.forEach(ds => {
-    const yesCount = rows.filter(r => (r.avail[ds]||'no') === 'yes').length;
-    const lrCount  = rows.filter(r => (r.avail[ds]||'no') === 'last-resort').length;
-    const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
-    html += '<td style="text-align:center;padding-top:10px">' +
-      '<div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
-      (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
-    '</td>';
-  });
-  html += '</tr></tbody></table>';
-  container.innerHTML = html;
-}
-
-// ══════════════════════════════════════
-// MATCH SUNDAYS — Apr 19 to Jun 14 2026
-// ══════════════════════════════════════
-const MATCH_SUNDAYS = [
-  '2026-04-19','2026-04-26','2026-05-03','2026-05-10',
-  '2026-05-17','2026-05-24','2026-05-31','2026-06-07','2026-06-14',
-  '2026-06-21','2026-06-28'
-];
-
-function sundayLabel(ds) {
-  const d = new Date(ds + 'T12:00:00');
-  return (d.getMonth()+1) + '/' + d.getDate();
-}
-
-// ── 3 states: yes / last-resort / no (default) ──
-const AVAIL_CYCLE = ['no','yes','last-resort'];
-const AVAIL_LABEL = { yes:'Yes', no:'No', 'last-resort':'Last Resort', '': 'No' };
-const AVAIL_CLASS = { yes:'yes', no:'no', 'last-resort':'last-resort', '':'no' };
-
-function avKey(email) {
-  return 'avail_' + (email||'').replace(/[.@]/g,'_');
-}
-
-async function cycleAvail(dateStr) {
-  if (!currentPlayerUser || !appData) return;
-  const key = avKey(currentPlayerUser.email);
-  if (!appData[key]) appData[key] = {};
-  const cur = appData[key][dateStr] || 'no';
-  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur) + 1) % AVAIL_CYCLE.length];
-  appData[key][dateStr] = next;
-  _suppressSaveErrors = true;
-  await persistData();
-  _suppressSaveErrors = false;
-  renderAvailGrid();
-}
-
-async function renderAvailGrid() {
-  const container = document.getElementById('avail-grid-container');
-  if (!container) return;
-
-  // Fetch latest data so we see everyone
-  let data = appData;
-  try { data = await fsGet() || appData; appData = data; } catch(e) {}
-
-  const invites = (data && data.invites) || {};
-  const today = new Date().toISOString().slice(0,10);
-
-  // Build full roster list — use ROSTER order but overlay invite join status
-  // Show ALL 13 roster players regardless of invite status
-  const rows = ROSTER.map(p => {
-    const emailKey = Object.keys(invites).find(k => invites[k].rosterName === p.name);
-    const inv = emailKey ? invites[emailKey] : null;
-    const email = inv ? inv.email : null;
-    const isMe = currentPlayerUser && email && email === currentPlayerUser.email;
-    const myAvail = email ? ((data && data[avKey(email)]) || {}) : {};
-    return { name: p.name, email, isMe, avail: myAvail, joined: inv ? inv.status === 'joined' : false };
-  });
-
-  // ── Table header ──
-  let html = '<table class="avail-table"><thead><tr>';
-  html += '<th>Player</th>';
-    const BYE_DATES    = new Set(MATCH_SCHEDULE.filter(m => m.isBye).map(m => m.date));
-  const NO_MATCH_DATES = new Set(['2026-05-24']); // Memorial Day weekend — no match scheduled
-
-  // Build home/away lookup from schedule
-  const HA_MAP = {};
-  MATCH_SCHEDULE.forEach(m => {
-    const isHome = m.home === 'Baseline Authority';
-    HA_MAP[m.date] = { isBye: m.isBye, isHome };
-  });
-
-  MATCH_SUNDAYS.forEach(ds => {
-    const isPast = ds < today;
-    const isBye  = BYE_DATES.has(ds);
-    const ha     = HA_MAP[ds];
-    const isHome = ha && !ha.isBye && ha.isHome;
-    const isAway = ha && !ha.isBye && !ha.isHome;
-
-    const isNoMatch = NO_MATCH_DATES.has(ds);
-    let subLabel, subColor;
-    if (isBye)        { subLabel = 'BYE';       subColor = 'var(--warning)'; }
-    else if (isNoMatch){ subLabel = 'NO MATCH'; subColor = 'var(--text-dim)'; }
-    else if (isHome)  { subLabel = 'HOME';      subColor = 'var(--teal)'; }
-    else if (isAway)  { subLabel = 'AWAY';      subColor = 'var(--accent)'; }
-    else              { subLabel = 'SUN';       subColor = 'var(--text-dim)'; }
-
-    html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
-      sundayLabel(ds) +
-      '<br><span style="font-size:9px;font-weight:500;color:' + subColor + '">' + subLabel + '</span>' +
-    '</th>';
-  });
-  html += '</tr></thead><tbody>';
-
-  // ── One row per roster player ──
-  rows.forEach(row => {
-    const trClass = row.isMe ? 'me' : '';
-    html += '<tr class="' + trClass + '">';
-    // Name cell
-    html += '<td>' + row.name +
-      (row.isMe ? ' <span style="font-size:10px;opacity:0.6">(you)</span>' : '') +
-      (!row.joined && !row.isMe ? ' <span style="font-size:10px;color:var(--text-dim);opacity:0.5">—</span>' : '') +
-    '</td>';
-    // One cell per Sunday
-    MATCH_SUNDAYS.forEach(ds => {
-      if (BYE_DATES.has(ds)) {
-        html += '<td><span style="font-size:11px;padding:3px 8px;border-radius:6px;' +
-          'background:rgba(245,166,35,0.12);color:var(--warning);border:1px solid rgba(245,166,35,0.25);' +
-          'display:inline-block">Bye</span></td>';
-        return;
-      }
-      if (NO_MATCH_DATES.has(ds)) {
-        html += '<td><span style="font-size:11px;padding:3px 8px;border-radius:6px;' +
-          'background:rgba(90,106,122,0.12);color:var(--text-dim);border:1px solid rgba(90,106,122,0.2);' +
-          'display:inline-block">No Match</span></td>';
-        return;
-      }
-      const state = row.avail[ds] || 'no';
-      const cls = AVAIL_CLASS[state];
-      const lbl = AVAIL_LABEL[state];
-      if (row.isMe) {
-        html += '<td><span class="avail-pill ' + cls + ' clickable" data-ds="' + ds + '" onclick="cycleAvail(this.dataset.ds)">' + lbl + '</span></td>';
-      } else if (row.joined || row.email) {
-        html += '<td><span class="avail-pill ' + cls + '">' + lbl + '</span></td>';
-      } else {
-        html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
-      }
-    });;
-    html += '</tr>';
-  });
-
-  // ── Summary row: count Yes per Sunday ──
-  html += '<tr style="border-top:2px solid var(--border)">';
-  html += '<td style="font-size:11px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;padding-top:10px">Yes count</td>';
-  MATCH_SUNDAYS.forEach(ds => {
-    if (BYE_DATES.has(ds) || NO_MATCH_DATES.has(ds)) { html += '<td></td>'; return; }
-    const yesCount = rows.filter(r => (r.avail[ds] || 'no') === 'yes').length;
-    const lrCount  = rows.filter(r => (r.avail[ds] || 'no') === 'last-resort').length;
-    const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
-    html += '<td style="text-align:center;padding-top:10px">' +
-      '<div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
-      (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
-    '</td>';
-  });
-  html += '</tr>';
-  html += '</tbody></table>';
-  container.innerHTML = html;
-}
-
-// Stub — no longer used but called in handlePlayerLogin
-async function renderMyAvailGrid() { await renderAvailGrid(); }
-async function renderTeamAvailGrid() { await renderAvailGrid(); }
-
-// ══════════════════════════════════════
-// MY LINES
+// MY LINES (player view)
 // ══════════════════════════════════════
 function renderMyLines() {
   const container = document.getElementById('my-lines-content');
@@ -3460,14 +2824,12 @@ function renderMyLines() {
     l.player1 === currentPlayerName ||
     l.player2 === currentPlayerName
   );
-
   if (!myLines.length) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div>' +
       '<div class="empty-title">Not currently assigned to a line</div>' +
       '<div class="empty-sub">Check back after the captain sets the lineup</div></div>';
     return;
   }
-
   container.innerHTML = myLines.map(l => {
     if (l.type === 'singles') {
       return '<div class="line-card">' +
@@ -3492,8 +2854,7 @@ function renderMyLines() {
 }
 
 // ══════════════════════════════════════
-// CAPTAIN: INVITE MANAGEMENT
-// (shown in captain app under Roster tab)
+// CAPTAIN INVITE MANAGEMENT
 // ══════════════════════════════════════
 async function sendInvite() {
   const emailInput = document.getElementById('invite-email');
@@ -3502,11 +2863,9 @@ async function sendInvite() {
   const name  = nameInput  ? nameInput.value.trim() : '';
   if (!email || !name) { showToast('Enter both email and roster name.', true); return; }
   if (!email.includes('@')) { showToast('Enter a valid email address.', true); return; }
-
-  const emailKey = email.replace(/\./g,'_');
+  const emailKey = email.replace(/[.@]/g,'_');
   if (!appData.invites) appData.invites = {};
   if (appData.invites[emailKey]) { showToast(name + ' is already invited.', true); return; }
-
   appData.invites[emailKey] = {
     email, rosterName: name, status: 'pending',
     invitedAt: new Date().toISOString(), invitedBy: 'Elan Vasudevan'
@@ -3515,7 +2874,7 @@ async function sendInvite() {
   renderInviteList();
   if (emailInput) emailInput.value = '';
   if (nameInput)  nameInput.value = '';
-  showToast('Invite saved for ' + name + '! Send them the link: https://appcodr.github.io/batennisanalysis/');
+  showToast('Invite saved for ' + name + '! Share the link: https://appcodr.github.io/batennisanalysis/');
 }
 
 async function revokeInvite(emailKey) {
@@ -3549,6 +2908,7 @@ function renderInviteList() {
     '</div>';
   }).join('');
 }
+
 </script>
 </body>
 </html>
