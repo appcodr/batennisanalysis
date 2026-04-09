@@ -2680,6 +2680,597 @@ async function refreshAnalysis() {
 }
 
 // ══════════════════════════════════════
+// MATCH SUNDAYS + SCHEDULE
+// ══════════════════════════════════════
+const MATCH_SUNDAYS = [
+  '2026-04-19','2026-04-26','2026-05-03','2026-05-10',
+  '2026-05-17','2026-05-24','2026-05-31','2026-06-07','2026-06-14',
+  '2026-06-21','2026-06-28'
+];
+
+const MATCH_SCHEDULE = [
+  { id:'1011900929', date:'2026-04-19', time:'4:00 PM', home:'Baseline Authority', away:'Bye',              homeCapt:'Elan Vasudevan', awayCapt:'N/A',           venue:'N/A',                                isBye:true  },
+  { id:'1011900933', date:'2026-04-26', time:'4:00 PM', home:'Baseline Authority', away:'Wilco Warriors',   homeCapt:'Elan Vasudevan', awayCapt:'Brian Winans',  venue:'Williamson County Tennis Center',    isBye:false },
+  { id:'1011900937', date:'2026-05-03', time:'4:00 PM', home:'Balcones Breakers',  away:'Baseline Authority',homeCapt:'Casey Bell',     awayCapt:'Elan Vasudevan',venue:'Balcones Country Club - Spicewood',  isBye:false },
+  { id:'1011900940', date:'2026-05-10', time:'4:00 PM', home:'Serves You Right',   away:'Baseline Authority',homeCapt:'Mark Weber',     awayCapt:'Elan Vasudevan',venue:'Old Settlers Park Tennis Courts',    isBye:false },
+  { id:'1011900942', date:'2026-05-17', time:'2:00 PM', home:'Baseline Authority', away:'SKO Great Hills',  homeCapt:'Elan Vasudevan', awayCapt:'Jacob Plotkin', venue:'Williamson County Tennis Center',    isBye:false },
+  { id:'1011900944', date:'2026-05-31', time:'4:00 PM', home:'Baseline Authority', away:'Bye',              homeCapt:'Elan Vasudevan', awayCapt:'N/A',           venue:'N/A',                                isBye:true  },
+  { id:'1011900948', date:'2026-06-07', time:'4:00 PM', home:'Wilco Warriors',     away:'Baseline Authority',homeCapt:'Brian Winans',   awayCapt:'Elan Vasudevan',venue:'Williamson County Tennis Center',    isBye:false },
+  { id:'1011900952', date:'2026-06-14', time:'4:00 PM', home:'Baseline Authority', away:'Balcones Breakers',homeCapt:'Elan Vasudevan', awayCapt:'Casey Bell',    venue:'Williamson County Tennis Center',    isBye:false },
+  { id:'1011900955', date:'2026-06-21', time:'4:00 PM', home:'Baseline Authority', away:'Serves You Right', homeCapt:'Elan Vasudevan', awayCapt:'Mark Weber',    venue:'Williamson County Tennis Center',    isBye:false },
+  { id:'1011900957', date:'2026-06-28', time:'4:00 PM', home:'Baseline Authority', away:'SKO Great Hills',  homeCapt:'Elan Vasudevan', awayCapt:'Jacob Plotkin', venue:'Williamson County Tennis Center',    isBye:false },
+];
+
+const NO_MATCH_DATES = new Set(['2026-05-24']);
+
+function sundayLabel(ds) {
+  const d = new Date(ds + 'T12:00:00');
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+// ══════════════════════════════════════
+// PRACTICE DAYS — Weekdays Apr 20 – Jun 12 2026
+// ══════════════════════════════════════
+const PRACTICE_DAYS = [
+  ['2026-04-20','2026-04-21','2026-04-22','2026-04-23','2026-04-24'],
+  ['2026-04-27','2026-04-28','2026-04-29','2026-04-30','2026-05-01'],
+  ['2026-05-04','2026-05-05','2026-05-06','2026-05-07','2026-05-08'],
+  ['2026-05-11','2026-05-12','2026-05-13','2026-05-14','2026-05-15'],
+  ['2026-05-18','2026-05-19','2026-05-20','2026-05-21','2026-05-22'],
+  ['2026-05-25','2026-05-26','2026-05-27','2026-05-28','2026-05-29'],
+  ['2026-06-01','2026-06-02','2026-06-03','2026-06-04','2026-06-05'],
+  ['2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12'],
+];
+const WEEKDAY_LABELS = ['Mon','Tue','Wed','Thu','Fri'];
+
+function practiceWeekLabel(week) {
+  const s = week[0], e = week[week.length-1];
+  const fmt = ds => { const d = new Date(ds+'T12:00:00'); return (d.getMonth()+1)+'/'+d.getDate(); };
+  return fmt(s) + '-' + fmt(e);
+}
+
+let currentPracticeWeek = 0;
+
+// ══════════════════════════════════════
+// WEATHER — Open-Meteo API
+// ══════════════════════════════════════
+const WX_LAT = 30.2672, WX_LON = -97.7431;
+
+function windDir(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5)%16];
+}
+
+function wxCode(code) {
+  const map = {0:'Clear',1:'Mostly Clear',2:'Partly Cloudy',3:'Overcast',
+    45:'Foggy',51:'Light Drizzle',61:'Light Rain',63:'Rain',65:'Heavy Rain',
+    80:'Showers',81:'Heavy Showers',95:'Thunderstorm'};
+  return map[code] || 'Mixed';
+}
+
+function wxIcon(code) {
+  if (code===0) return '☀️';
+  if (code<=2) return '🌤️';
+  if (code===3) return '☁️';
+  if (code<=48) return '🌫️';
+  if (code<=67) return '🌧️';
+  if (code<=77) return '❄️';
+  if (code<=82) return '🌦️';
+  return '⛈️';
+}
+
+let cachedWeather = null;
+
+async function fetchWeatherForDate(dateStr, hour) {
+  const today = new Date().toISOString().slice(0,10);
+  const isPast = dateStr < today;
+  const url = isPast
+    ? `https://archive-api.open-meteo.com/v1/archive?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`
+    : `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,apparent_temperature,precipitation,windspeed_10m,winddirection_10m,windgusts_10m,weathercode,relativehumidity_2m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago`;
+  const res = await fetch(url);
+  const data = await res.json();
+  const h = data.hourly;
+  const i = Math.min(hour, h.time.length-1);
+  return {
+    temp:Math.round(h.temperature_2m[i]), feels:Math.round(h.apparent_temperature[i]),
+    precip:h.precipitation[i].toFixed(2), wind:Math.round(h.windspeed_10m[i]),
+    gusts:Math.round(h.windgusts_10m[i]), windDir:windDir(h.winddirection_10m[i]),
+    humidity:h.relativehumidity_2m[i], code:h.weathercode[i]
+  };
+}
+
+let wxDebounce = null;
+async function previewWeather() {
+  const dateVal = document.getElementById('session-date') && document.getElementById('session-date').value;
+  const timeVal = (document.getElementById('session-time') && document.getElementById('session-time').value) || '09:00';
+  const preview = document.getElementById('weather-preview');
+  if (!dateVal || !preview) return;
+  clearTimeout(wxDebounce);
+  preview.innerHTML = '<span style="color:var(--teal);font-size:12px">⟳ Fetching Austin weather…</span>';
+  wxDebounce = setTimeout(async () => {
+    try {
+      const hour = parseInt(timeVal.split(':')[0]);
+      const wx = await fetchWeatherForDate(dateVal, hour);
+      cachedWeather = wx;
+      preview.innerHTML =
+        '<span style="font-size:20px">' + wxIcon(wx.code) + '</span>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:14px;font-weight:500;color:var(--text)">' + wx.temp + '°F <span style="font-size:11px;color:var(--text-muted)">feels ' + wx.feels + '°F</span> · ' + wxCode(wx.code) + '</div>' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">💨 ' + wx.wind + ' mph ' + wx.windDir + ' · Gusts ' + wx.gusts + ' mph · 💧 ' + wx.humidity + '%' + (parseFloat(wx.precip)>0?' · 🌧 '+wx.precip+'"':'') + '</div>' +
+        '</div>';
+    } catch(e) {
+      if (preview) preview.innerHTML = '<span style="color:var(--accent);font-size:12px">Could not fetch weather</span>';
+    }
+  }, 500);
+}
+
+// ══════════════════════════════════════
+// RENDER PRACTICE LOG
+// ══════════════════════════════════════
+function renderPracticeMatch(m) {
+  const sets = parseSets(m.score, m.result);
+  const isWin = m.result === 'win';
+  const isSingles = m.type === 'singles';
+  let setCols = '';
+  if (!sets.length || m.score === '—') {
+    setCols = '<div class="set-col"><div class="set-score" style="font-size:12px;color:var(--text-dim)">—</div></div>';
+  } else {
+    setCols = sets.map((s,i) => {
+      const ourWon = s.our > s.their;
+      const label = s.isTiebreak ? 'TB' : ('S'+(i+1));
+      return '<div class="set-col' + (s.isTiebreak?' tiebreak':'') + '">' +
+        '<div class="set-label">'+label+'</div>' +
+        '<div class="set-score '+(ourWon?'winner':'loser')+'" style="font-size:17px">'+s.our+'</div>' +
+        '<div class="set-score '+(!ourWon?'winner':'loser')+'" style="font-size:17px">'+s.their+'</div>' +
+      '</div>';
+    }).join('');
+  }
+  const ourSets = sets.filter(s=>s.our>s.their).length;
+  const theirSets = sets.filter(s=>s.their>s.our).length;
+  const typeTag = '<span style="font-size:10px;padding:2px 8px;border-radius:100px;background:' +
+    (isSingles?'rgba(233,69,96,0.12)':'rgba(0,180,216,0.12)') + ';color:' +
+    (isSingles?'var(--accent)':'var(--teal)') + ';border:1px solid ' +
+    (isSingles?'rgba(233,69,96,0.2)':'rgba(0,180,216,0.2)') + '">' +
+    (isSingles?'Singles':'Doubles') + '</span>';
+  return '<div class="scorecard '+(isWin?'win':'loss')+'" style="margin-bottom:8px">' +
+    '<div class="scorecard-body">' +
+      '<div class="scorecard-players" style="padding:10px 14px;gap:8px">' +
+        '<div class="scorecard-row"><div class="serve-dot '+(isWin?'show':'')+'">' +
+        '</div><div class="player-name '+(isWin?'winner':'loser')+'" style="font-size:13px">'+( m.p1||'—')+'</div>'+typeTag+'</div>' +
+        '<div class="scorecard-row"><div class="serve-dot '+(!isWin?'show':'')+'"></div>' +
+        '<div class="player-name '+(!isWin?'winner':'loser')+'" style="font-size:13px">'+(m.p2||'—')+'</div></div>' +
+      '</div>' +
+      '<div class="scorecard-sets">' + setCols +
+        '<div class="result-col" style="min-width:44px;padding:8px 6px">' +
+          '<div class="result-badge '+(isWin?'win':'loss')+'" style="font-size:12px;padding:3px 8px">'+(isWin?'W':'L')+'</div>' +
+          (sets.length?'<div class="sets-won-badge">'+ourSets+'–'+theirSets+'</div>':'') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderPracticeLog() {
+  const container = document.getElementById('practice-log-list');
+  const sessions = [...(appData.practiceSessions||[])].reverse();
+  if (!sessions.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div>' +
+      '<div class="empty-title">No sessions logged yet</div>' +
+      '<div class="empty-sub">Use the "Log Session" tab to record practice scores</div></div>';
+    return;
+  }
+  container.innerHTML = sessions.map((s,ridx) => {
+    const realIdx = appData.practiceSessions.length - 1 - ridx;
+    let weatherHtml = '';
+    if (s.weather) {
+      const wx = s.weather;
+      weatherHtml = '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:rgba(0,180,216,0.06);border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+        '<span style="font-size:16px">'+wxIcon(wx.code)+'</span>' +
+        '<span style="font-size:13px;font-weight:500;color:var(--text)">'+wx.temp+'°F</span>' +
+        '<span style="font-size:12px;color:var(--text-muted)">feels '+wx.feels+'°F · '+wxCode(wx.code)+'</span>' +
+        '<span style="font-size:12px;color:var(--text-muted)">💨 '+wx.wind+' mph '+wx.windDir+' · gusts '+wx.gusts+' mph · 💧 '+wx.humidity+'%</span>' +
+        (parseFloat(wx.precip)>0?'<span style="font-size:12px;color:var(--warning)">🌧 '+wx.precip+'"</span>':'') +
+        '<span style="font-size:11px;color:var(--text-dim);margin-left:auto">Austin, TX · '+(s.time||'')+'</span>' +
+      '</div>';
+    }
+    const matches = s.matches || [];
+    const matchesHtml = matches.length
+      ? '<div style="padding:10px 14px">' + matches.map(m=>renderPracticeMatch(m)).join('') + '</div>'
+      : '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">No match scores recorded</div>';
+    const notesHtml = s.notes
+      ? '<div style="margin:0 14px 12px;font-size:13px;color:var(--text-muted);font-style:italic;border-left:2px solid var(--accent);padding-left:12px">'+s.notes+'</div>'
+      : '';
+    return '<div class="session-item" style="padding:0;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">' +
+        '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--teal)">'+s.date+'</span>' +
+        (s.time?'<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">'+s.time+'</span>':'') +
+        '<span style="font-size:11px;padding:2px 8px;border-radius:100px;background:rgba(245,166,35,0.12);color:var(--warning)">'+(s.type||'Practice')+'</span>' +
+        '<span style="font-size:11px;color:var(--text-dim)">'+matches.length+' match'+(matches.length!==1?'es':'')+'</span>' +
+        '<button onclick="deleteSession('+realIdx+')" style="margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 4px" title="Delete">✕</button>' +
+      '</div>' +
+      weatherHtml + matchesHtml + notesHtml +
+    '</div>';
+  }).join('');
+  document.getElementById('stat-sessions').textContent = appData.practiceSessions.length;
+}
+
+// ══════════════════════════════════════
+// SESSION FORM
+// ══════════════════════════════════════
+let matchEntryCount = 0;
+
+function rosterOpts(includeBlank) {
+  let html = includeBlank ? '<option value="">— Select player —</option>' : '';
+  html += ROSTER.map(p=>'<option value="'+p.name+'">'+p.name+' ('+p.ntrp.toFixed(1)+')</option>').join('');
+  return html;
+}
+
+function addMatchEntry() {
+  matchEntryCount++;
+  const id = matchEntryCount;
+  const div = document.createElement('div');
+  div.style.cssText = 'background:var(--clay-mid);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;position:relative';
+  div.id = 'match-entry-'+id;
+  div.innerHTML =
+    '<button onclick="this.closest(\'[id^=match-entry]\').remove()" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px">✕</button>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">' +
+      '<span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)">Type</span>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button type="button" class="type-btn active" id="type-s-'+id+'" onclick="setMatchType('+id+',\'singles\')" style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer">Singles</button>' +
+        '<button type="button" class="type-btn" id="type-d-'+id+'" onclick="setMatchType('+id+',\'doubles\')" style="padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">Doubles</button>' +
+      '</div>' +
+      '<input type="hidden" id="match-type-'+id+'" value="singles" />' +
+    '</div>' +
+    '<div id="singles-section-'+id+'">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+        playerPickerHtml('s1-'+id,'Our Player') + playerPickerHtml('s2-'+id,'Opponent') +
+      '</div>' +
+    '</div>' +
+    '<div id="doubles-section-'+id+'" style="display:none">' +
+      '<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin-bottom:8px">Our Team</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+        playerPickerHtml('d1a-'+id,'Player A') + playerPickerHtml('d1b-'+id,'Player B') +
+      '</div>' +
+      '<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Opponents</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+        playerPickerHtml('d2a-'+id,'Player A') + playerPickerHtml('d2b-'+id,'Player B') +
+      '</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px">' +
+      '<div class="form-group"><label class="form-label">Score (e.g. 6-3, 6-4)</label><input class="form-input match-score" placeholder="6-3, 6-4" style="margin-bottom:0" /></div>' +
+      '<div class="form-group"><label class="form-label">Result (our side)</label><select class="form-select match-result" style="margin-bottom:0"><option value="win">Win ✓</option><option value="loss">Loss ✗</option></select></div>' +
+    '</div>';
+  document.getElementById('match-entries').appendChild(div);
+}
+
+function playerPickerHtml(idPrefix, label) {
+  const opts = ROSTER.map(p=>'<option value="'+p.name+'">'+p.name+' ('+p.ntrp.toFixed(1)+')</option>').join('');
+  return '<div class="form-group">' +
+    '<label class="form-label">'+label+'</label>' +
+    '<select class="form-select player-pick" id="'+idPrefix+'-sel" style="margin-bottom:6px" onchange="toggleCustomInput(\''+idPrefix+'\')">' +
+      '<option value="">— From roster —</option>' + opts +
+      '<option value="__other__">Other (not on roster)</option>' +
+    '</select>' +
+    '<input class="form-input player-custom" id="'+idPrefix+'-txt" placeholder="Enter opponent name…" style="margin-bottom:0;display:none" />' +
+  '</div>';
+}
+
+function toggleCustomInput(idPrefix) {
+  const sel = document.getElementById(idPrefix+'-sel');
+  const txt = document.getElementById(idPrefix+'-txt');
+  if (sel && txt) { txt.style.display = sel.value==='__other__'?'block':'none'; if(sel.value!=='__other__') txt.value=''; }
+}
+
+function getPlayerVal(idPrefix) {
+  const sel = document.getElementById(idPrefix+'-sel');
+  const txt = document.getElementById(idPrefix+'-txt');
+  if (sel && sel.value==='__other__') return (txt&&txt.value.trim()) || 'Unknown';
+  return (sel&&sel.value) || '—';
+}
+
+function setMatchType(id, type) {
+  document.getElementById('match-type-'+id).value = type;
+  const sBtn=document.getElementById('type-s-'+id), dBtn=document.getElementById('type-d-'+id);
+  const sSection=document.getElementById('singles-section-'+id), dSection=document.getElementById('doubles-section-'+id);
+  if (type==='singles') {
+    sBtn.style.cssText='padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--accent);background:rgba(233,69,96,0.15);color:var(--accent);cursor:pointer';
+    dBtn.style.cssText='padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer';
+    sSection.style.display='block'; dSection.style.display='none';
+  } else {
+    dBtn.style.cssText='padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--teal);background:rgba(0,180,216,0.15);color:var(--teal);cursor:pointer';
+    sBtn.style.cssText='padding:5px 14px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer';
+    sSection.style.display='none'; dSection.style.display='block';
+  }
+}
+
+async function saveSession() {
+  const date = document.getElementById('session-date').value;
+  if (!date) { showToast('Please select a date.', true); return; }
+  const timeVal = (document.getElementById('session-time')&&document.getElementById('session-time').value)||'09:00';
+  const type = document.getElementById('session-type').value;
+  const notes = document.getElementById('session-notes').value.trim();
+  let weather = null;
+  try {
+    const hour = parseInt(timeVal.split(':')[0]);
+    weather = cachedWeather || await fetchWeatherForDate(date, hour);
+    cachedWeather = null;
+  } catch(e) { weather = null; }
+  const entries = document.querySelectorAll('[id^="match-entry-"]');
+  const matches = [];
+  entries.forEach(e => {
+    const entryId = e.id.replace('match-entry-','');
+    const matchType = document.getElementById('match-type-'+entryId)?.value||'singles';
+    const scoreInput = e.querySelector('.match-score');
+    const resultSel  = e.querySelector('.match-result');
+    const score  = scoreInput ? scoreInput.value.trim()||'—' : '—';
+    const result = resultSel ? resultSel.value : 'win';
+    let p1='', p2='', label='';
+    if (matchType==='singles') {
+      p1=getPlayerVal('s1-'+entryId); p2=getPlayerVal('s2-'+entryId); label='Singles';
+    } else {
+      const d1a=getPlayerVal('d1a-'+entryId), d1b=getPlayerVal('d1b-'+entryId);
+      const d2a=getPlayerVal('d2a-'+entryId), d2b=getPlayerVal('d2b-'+entryId);
+      p1=[d1a,d1b].filter(x=>x&&x!=='—').join(' & ')||'—';
+      p2=[d2a,d2b].filter(x=>x&&x!=='—').join(' & ')||'—';
+      label='Doubles';
+    }
+    if (p1!=='—'||p2!=='—') matches.push({type:matchType, label, p1, p2, score, result});
+  });
+  const session = {date, time:timeVal, type, notes, matches, weather, loggedBy:'Elan/Rohith', timestamp:Date.now()};
+  appData.practiceSessions.push(session);
+  await persistData();
+  showToast('Session saved with weather!');
+  clearForm();
+  renderPracticeLog();
+  renderScores();
+}
+
+function clearForm() {
+  const sd = document.getElementById('session-date'); if(sd) sd.valueAsDate = new Date();
+  const st = document.getElementById('session-time'); if(st) st.value = '09:00';
+  const sn = document.getElementById('session-notes'); if(sn) sn.value = '';
+  const me = document.getElementById('match-entries'); if(me) me.innerHTML = '';
+  const wp = document.getElementById('weather-preview');
+  if(wp) wp.innerHTML = '<span style="color:var(--text-dim)">Select date &amp; time to fetch…</span>';
+  cachedWeather = null;
+  matchEntryCount = 0;
+}
+
+async function deleteSession(idx) {
+  if (!confirm('Delete this session?')) return;
+  appData.practiceSessions.splice(idx, 1);
+  await persistData();
+  renderPracticeLog();
+  renderScores();
+  showToast('Session deleted.');
+}
+
+// ══════════════════════════════════════
+// SCHEDULE RENDERER
+// ══════════════════════════════════════
+function renderSchedule(containerId, showMatchHistory) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const today = new Date().toISOString().slice(0,10);
+  const matchHistory = (appData && appData.matchHistory) || [];
+  const nextMatch = MATCH_SCHEDULE.find(m => !m.isBye && m.date >= today);
+  const wins   = matchHistory.filter(m=>m.result==='win').length;
+  const losses = matchHistory.filter(m=>m.result==='loss').length;
+  let html = '';
+  if (showMatchHistory && matchHistory.length > 0) {
+    html += '<div style="display:flex;gap:16px;align-items:center;margin-bottom:20px;padding:12px 16px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">' +
+      '<span style="font-size:12px;color:var(--text-muted)">Season record</span>' +
+      '<span style="font-family:var(--font-mono,monospace);font-size:18px;font-weight:600;color:var(--text)">' + wins + '<span style="color:var(--text-dim);font-size:13px">W</span> – ' + losses + '<span style="color:var(--text-dim);font-size:13px">L</span></span>' +
+    '</div>';
+  }
+  MATCH_SCHEDULE.forEach(m => {
+    const isPast  = m.date < today;
+    const isNext  = !m.isBye && nextMatch && m.date === nextMatch.date;
+    const isHome  = m.home === 'Baseline Authority';
+    const opponent = isHome ? m.away : m.home;
+    const oppCapt  = isHome ? m.awayCapt : m.homeCapt;
+    const result   = matchHistory.find(mh => mh.date === m.date);
+    let cardClass  = 'schedule-card' + (m.isBye?' bye':isHome?' home':' away') + (isPast?' past':'');
+    let haBadge = m.isBye
+      ? '<span class="schedule-ha-badge bye">BYE</span>'
+      : '<span class="schedule-ha-badge '+(isHome?'home':'away')+'">'+(isHome?'HOME':'AWAY')+'</span>';
+    const nextBadge = isNext ? '<span class="schedule-next-badge">NEXT MATCH</span>' : '';
+    let resultChip = result
+      ? '<span class="schedule-result-chip '+result.result+'">'+(result.result==='win'?'W':'L')+'</span>'
+      : (!isPast && !m.isBye ? '<span class="schedule-result-chip upcoming">Upcoming</span>' : '');
+    html += '<div class="'+cardClass+'">' +
+      '<div class="schedule-header">' +
+        '<div class="schedule-meta"><span class="schedule-date">'+m.date+'</span><span class="schedule-time">'+m.time+'</span>'+haBadge+nextBadge+resultChip+'</div>' +
+      '</div>' +
+      '<div class="schedule-body">' +
+        '<div class="schedule-teams">' +
+          (m.isBye
+            ? '<span class="schedule-team bye-label">Bye week — no match</span>'
+            : '<span class="schedule-team us">Baseline Authority</span><span class="schedule-vs">vs</span><div><div class="schedule-team them">'+opponent+'</div><div style="font-size:11px;color:var(--text-dim)">Capt: '+oppCapt+'</div></div>'
+          ) +
+        '</div>' +
+        (m.venue&&m.venue!=='N/A' ? '<div class="schedule-venue">📍 '+m.venue+'</div>' : '') +
+      '</div>' +
+    '</div>';
+  });
+  container.innerHTML = html;
+}
+
+// ══════════════════════════════════════
+// AVAILABILITY GRIDS
+// ══════════════════════════════════════
+const AVAIL_CYCLE = ['no','yes','last-resort'];
+const AVAIL_LABEL = { yes:'Yes', no:'No', 'last-resort':'Last Resort', '':'No' };
+const AVAIL_CLASS = { yes:'yes', no:'no', 'last-resort':'last-resort', '':'no' };
+
+function avKey(email) { return 'avail_' + (email||'').replace(/[.@]/g,'_'); }
+function pavKey(email) { return 'pavail_' + (email||'').replace(/[.@]/g,'_'); }
+
+async function cycleAvail(dateStr) {
+  if (!currentPlayerUser||!appData) return;
+  const key = avKey(currentPlayerUser.email);
+  if (!appData[key]) appData[key] = {};
+  const cur  = appData[key][dateStr]||'no';
+  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur)+1)%AVAIL_CYCLE.length];
+  appData[key][dateStr] = next;
+  _suppressSaveErrors = true;
+  await persistData();
+  _suppressSaveErrors = false;
+  renderAvailGrid();
+}
+
+async function cyclePracticeAvail(dateStr) {
+  if (!currentPlayerUser||!appData) return;
+  const key = pavKey(currentPlayerUser.email);
+  if (!appData[key]) appData[key] = {};
+  const cur  = appData[key][dateStr]||'no';
+  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(cur)+1)%AVAIL_CYCLE.length];
+  appData[key][dateStr] = next;
+  _suppressSaveErrors = true;
+  await persistData();
+  _suppressSaveErrors = false;
+  renderPracticeAvailGrid();
+}
+
+async function renderAvailGrid() {
+  const container = document.getElementById('avail-grid-container');
+  if (!container) return;
+  let data = appData;
+  try { data = await fsGet()||appData; appData = data; } catch(e) {}
+  const invites  = (data&&data.invites)||{};
+  const today    = new Date().toISOString().slice(0,10);
+  const BYE_DATES     = new Set(MATCH_SCHEDULE.filter(m=>m.isBye).map(m=>m.date));
+  const HA_MAP = {};
+  MATCH_SCHEDULE.forEach(m => { HA_MAP[m.date] = { isBye:m.isBye, isHome: m.home==='Baseline Authority' }; });
+  const rows = ROSTER.map(p => {
+    const emailKey = Object.keys(invites).find(k=>invites[k].rosterName===p.name);
+    const inv = emailKey?invites[emailKey]:null;
+    const email = inv?inv.email:null;
+    const isMe = currentPlayerUser&&email&&email===currentPlayerUser.email;
+    const myAvail = email?((data&&data[avKey(email)])||{}): {};
+    return {name:p.name, email, isMe, avail:myAvail, joined:inv?inv.status==='joined':false};
+  });
+  let html = '<table class="avail-table"><thead><tr><th>Player</th>';
+  MATCH_SUNDAYS.forEach(ds => {
+    const isPast = ds < today;
+    const isBye  = BYE_DATES.has(ds);
+    const isNoMatch = NO_MATCH_DATES.has(ds);
+    const ha = HA_MAP[ds];
+    const isHome = ha&&!ha.isBye&&ha.isHome;
+    const isAway = ha&&!ha.isBye&&!ha.isHome;
+    let subLabel, subColor;
+    if (isBye)         { subLabel='BYE';      subColor='var(--warning)'; }
+    else if (isNoMatch){ subLabel='NO MATCH'; subColor='var(--text-dim)'; }
+    else if (isHome)   { subLabel='HOME';     subColor='var(--teal)'; }
+    else if (isAway)   { subLabel='AWAY';     subColor='var(--accent)'; }
+    else               { subLabel='SUN';      subColor='var(--text-dim)'; }
+    html += '<th class="match-date" style="'+((isPast||isNoMatch)?'opacity:0.45':'')+'">' +
+      sundayLabel(ds)+'<br><span style="font-size:9px;font-weight:500;color:'+subColor+'">'+subLabel+'</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    html += '<tr class="'+(row.isMe?'me':'')+'"><td>'+row.name+(row.isMe?' <span style="font-size:10px;opacity:0.6">(you)</span>':'')+'</td>';
+    MATCH_SUNDAYS.forEach(ds => {
+      if (BYE_DATES.has(ds)) { html += '<td><span style="font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(245,166,35,0.12);color:var(--warning);border:1px solid rgba(245,166,35,0.25);display:inline-block">Bye</span></td>'; return; }
+      if (NO_MATCH_DATES.has(ds)) { html += '<td><span style="font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(90,106,122,0.12);color:var(--text-dim);border:1px solid rgba(90,106,122,0.2);display:inline-block">No Match</span></td>'; return; }
+      const state = row.avail[ds]||'no';
+      const cls = AVAIL_CLASS[state], lbl = AVAIL_LABEL[state];
+      if (row.isMe) html += '<td><span class="avail-pill '+cls+' clickable" data-ds="'+ds+'" onclick="cycleAvail(this.dataset.ds)">'+lbl+'</span></td>';
+      else if (row.joined||row.email) html += '<td><span class="avail-pill '+cls+'">'+lbl+'</span></td>';
+      else html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
+    });
+    html += '</tr>';
+  });
+  // Summary row
+  html += '<tr style="border-top:2px solid var(--border)"><td style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-top:10px">Yes count</td>';
+  MATCH_SUNDAYS.forEach(ds => {
+    if (BYE_DATES.has(ds)||NO_MATCH_DATES.has(ds)) { html += '<td></td>'; return; }
+    const yesCount = rows.filter(r=>(r.avail[ds]||'no')==='yes').length;
+    const lrCount  = rows.filter(r=>(r.avail[ds]||'no')==='last-resort').length;
+    const color = yesCount>=8?'var(--success)':yesCount>=5?'var(--warning)':'var(--text-dim)';
+    html += '<td style="text-align:center;padding-top:10px"><div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:'+color+'">'+yesCount+'</div>'+(lrCount>0?'<div style="font-size:10px;color:var(--warning)">+'+lrCount+' LR</div>':'')+'</td>';
+  });
+  html += '</tr></tbody></table>';
+  container.innerHTML = html;
+}
+
+async function renderPracticeAvailGrid() {
+  const container = document.getElementById('practice-avail-grid');
+  const weekTabsEl = document.getElementById('practice-week-tabs');
+  if (!container) return;
+  let data = appData;
+  try { data = await fsGet()||appData; appData = data; } catch(e) {}
+  const invites = (data&&data.invites)||{};
+  const today   = new Date().toISOString().slice(0,10);
+  const week    = PRACTICE_DAYS[currentPracticeWeek];
+  if (weekTabsEl) {
+    weekTabsEl.innerHTML = PRACTICE_DAYS.map((w,i) => {
+      const isPast = w[w.length-1] < today;
+      return '<button class="practice-week-btn'+(i===currentPracticeWeek?' active':'')+'"+' +
+        (isPast?' style="opacity:0.45"':'')+' onclick="currentPracticeWeek='+i+';renderPracticeAvailGrid()">Wk '+(i+1)+' · '+practiceWeekLabel(w)+'</button>';
+    }).join('');
+  }
+  const rows = ROSTER.map(p => {
+    const emailKey = Object.keys(invites).find(k=>invites[k].rosterName===p.name);
+    const inv=emailKey?invites[emailKey]:null;
+    const email=inv?inv.email:null;
+    const isMe=currentPlayerUser&&email&&email===currentPlayerUser.email;
+    const myAvail=email?((data&&data[pavKey(email)])||{}):{};
+    return {name:p.name,email,isMe,avail:myAvail,joined:inv?inv.status==='joined':false};
+  });
+  let html = '<table class="avail-table"><thead><tr><th>Player</th>';
+  week.forEach((ds,di) => {
+    const isPast=ds<today; const d=new Date(ds+'T12:00:00');
+    html += '<th class="match-date" style="'+(isPast?'opacity:0.45':'')+'">'+WEEKDAY_LABELS[di]+'<br><span style="font-size:9px;color:var(--text-dim)">'+(d.getMonth()+1)+'/'+d.getDate()+'</span></th>';
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    html += '<tr class="'+(row.isMe?'me':'')+'"><td>'+row.name+(row.isMe?' <span style="font-size:10px;opacity:0.6">(you)</span>':'')+((!row.joined&&!row.isMe)?' <span style="font-size:10px;color:var(--text-dim);opacity:0.5">—</span>':'')+'</td>';
+    week.forEach(ds => {
+      const state=row.avail[ds]||'no'; const cls=AVAIL_CLASS[state]; const lbl=AVAIL_LABEL[state];
+      const isPast=ds<today;
+      if (row.isMe&&!isPast) html += '<td><span class="avail-pill '+cls+' clickable" data-ds="'+ds+'" onclick="cyclePracticeAvail(this.dataset.ds)">'+lbl+'</span></td>';
+      else if (row.joined||row.email) html += '<td><span class="avail-pill '+cls+'"'+(isPast?' style="opacity:0.45"':'')+'>'+lbl+'</span></td>';
+      else html += '<td><span style="color:var(--text-dim);font-size:12px">—</span></td>';
+    });
+    html += '</tr>';
+  });
+  html += '<tr style="border-top:2px solid var(--border)"><td style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-top:10px">Yes count</td>';
+  week.forEach(ds => {
+    if (ds<today) { html += '<td></td>'; return; }
+    const yesCount=rows.filter(r=>(r.avail[ds]||'no')==='yes').length;
+    const lrCount =rows.filter(r=>(r.avail[ds]||'no')==='last-resort').length;
+    const color=yesCount>=8?'var(--success)':yesCount>=5?'var(--warning)':'var(--text-dim)';
+    html += '<td style="text-align:center;padding-top:10px"><div style="font-family:var(--font-mono,monospace);font-size:16px;font-weight:600;color:'+color+'">'+yesCount+'</div>'+(lrCount>0?'<div style="font-size:10px;color:var(--warning)">+'+lrCount+' LR</div>':'')+'</td>';
+  });
+  html += '</tr></tbody></table>';
+  container.innerHTML = html;
+}
+
+// Stubs for backward compat
+async function renderMyAvailGrid() { await renderAvailGrid(); }
+async function renderTeamAvailGrid() { await renderAvailGrid(); }
+
+// ══════════════════════════════════════
+// initApp
+// ══════════════════════════════════════
+async function initApp() {
+  await loadData();
+  const sd = document.getElementById('session-date');
+  if (sd) sd.valueAsDate = new Date();
+  renderRoster();
+  renderScores();
+  renderLines();
+  renderCombos();
+  renderPracticeLog();
+  renderInviteList();
+  renderSchedule('captain-schedule-content', true);
+  previewWeather();
+}
+
+
+
+// ══════════════════════════════════════
 // STARTUP — show login choice
 // ══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
@@ -2764,9 +3355,14 @@ async function handlePlayerLogin(email, name, picture) {
     const initials = currentPlayerName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.getElementById('player-avatar').textContent = initials;
     setPlayerStatus('Live');
-    const todayStr = new Date().toISOString().slice(0,10);
-    currentPracticeWeek = Math.max(0, PRACTICE_DAYS.findIndex(w => w[w.length-1] >= todayStr));
-    if (currentPracticeWeek < 0) currentPracticeWeek = PRACTICE_DAYS.length - 1;
+    // Auto-select current practice week (guard in case constants load order varies)
+    try {
+      const todayStr = new Date().toISOString().slice(0,10);
+      if (typeof PRACTICE_DAYS !== 'undefined') {
+        currentPracticeWeek = PRACTICE_DAYS.findIndex(w => w[w.length-1] >= todayStr);
+        if (currentPracticeWeek < 0) currentPracticeWeek = PRACTICE_DAYS.length - 1;
+      }
+    } catch(e) { currentPracticeWeek = 0; }
     await renderAvailGrid();
     renderMyLines();
     renderSchedule('player-schedule-content', false);
