@@ -2739,19 +2739,22 @@ async function handlePlayerLogin(email, name, picture) {
   try {
     const data = await fsGet();
     const invites = (data && data.invites) || {};
-    const emailKey = email.replace(/[.@]/g, '_');
-    if (!invites[emailKey]) {
+    // Support both old key format (dots only) and new format (dots + @)
+    const emailKey     = email.replace(/[.@]/g, '_');
+    const emailKeyOld  = email.split('.').join('_');
+    const foundKey     = invites[emailKey] ? emailKey : invites[emailKeyOld] ? emailKeyOld : null;
+    if (!foundKey) {
       showPlayerError('You have not been invited yet. Contact Captain Elan.');
       setPlayerStatus('Not invited');
       return;
     }
-    const invite = invites[emailKey];
+    const invite = invites[foundKey];
     currentPlayerUser = { email, name, picture };
     currentPlayerName = invite.rosterName || name;
     if (!appData) appData = data || {};
     if (!appData.invites) appData.invites = {};
-    appData.invites[emailKey].status = 'joined';
-    appData.invites[emailKey].lastSeen = new Date().toISOString();
+    appData.invites[foundKey].status = 'joined';
+    appData.invites[foundKey].lastSeen = new Date().toISOString();
     _suppressSaveErrors = true;
     try { await persistData(); } catch(e) {}
     _suppressSaveErrors = false;
