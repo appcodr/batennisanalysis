@@ -1070,6 +1070,7 @@
     <button class="nav-tab" onclick="switchTab('combos')">Analysis</button>
     <button class="nav-tab" onclick="switchTab('practice')">Practice Log</button>
     <button class="nav-tab" onclick="switchTab('log-entry')">Log Session</button>
+    <button class="nav-tab" onclick="switchTab('captain-avail')">Availability</button>
   </div>
 
   <div class="main">
@@ -1160,7 +1161,7 @@
       <div class="section-header">
         <div>
           <div class="section-title">Team Roster</div>
-          <div class="section-subtitle">13 Players · USTA Spring Adult 18+ WeekEND 2026</div>
+          <div class="section-subtitle">14 Players · USTA Spring Adult 18+ WeekEND 2026</div>
         </div>
       </div>
 
@@ -1175,7 +1176,8 @@
           <div class="form-group" style="flex:1;min-width:160px">
             <label class="form-label">Roster Name</label>
             <select class="form-select" id="invite-roster-name" style="margin:0">
-              <option value="">— Select player —</option><option value="Elan Vasudevan">Elan Vasudevan</option><option value="Rohith Chinnaswamy">Rohith Chinnaswamy</option><option value="Brad Jackson">Brad Jackson</option><option value="Jim Caldwell">Jim Caldwell</option><option value="Samir Modi">Samir Modi</option><option value="Cade Thompson">Cade Thompson</option><option value="Philip Bramson">Philip Bramson</option><option value="Jose Martinez">Jose Martinez</option><option value="Pavan Pawar">Pavan Pawar</option><option value="Gilbert Onyenwezi">Gilbert Onyenwezi</option><option value="Jean-Marie Kokou-Abi">Jean-Marie Kokou-Abi</option><option value="Brahma Thodati">Brahma Thodati</option><option value="Phani Kumar Valluripalli">Phani Kumar Valluripalli</option></select>
+              <option value="">— Select player —</option><option value="Elan Vasudevan">Elan Vasudevan</option><option value="Rohith Chinnaswamy">Rohith Chinnaswamy</option><option value="Brad Jackson">Brad Jackson</option><option value="Jim Caldwell">Jim Caldwell</option><option value="Samir Modi">Samir Modi</option><option value="Cade Thompson">Cade Thompson</option><option value="Philip Bramson">Philip Bramson</option><option value="Jose Martinez">Jose Martinez</option><option value="Pavan Pawar">Pavan Pawar</option><option value="Gilbert Onyenwezi">Gilbert Onyenwezi</option><option value="Jean-Marie Kokou-Abi">Jean-Marie Kokou-Abi</option><option value="Brahma Thodati">Brahma Thodati</option><option value="Phani Kumar Valluripalli">Phani Kumar Valluripalli</option>
+              <option value="Larry Bibb">Larry Bibb</option></select>
           </div>
           <button class="btn-primary" onclick="sendInvite()" style="white-space:nowrap;align-self:flex-end">Send Invite →</button>
         </div>
@@ -1329,6 +1331,31 @@
           <button class="btn-secondary" onclick="clearForm()">Clear</button>
         </div>
       </div>
+    </div>
+
+    <!-- ── CAPTAIN AVAILABILITY TAB ── -->
+    <div class="tab-panel" id="panel-captain-avail">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Team Availability</div>
+          <div class="section-subtitle">View &amp; set availability on behalf of players</div>
+        </div>
+        <select id="captain-avail-mode" class="form-select" style="margin:0;min-width:160px" onchange="renderCaptainAvailGrid()">
+          <option value="match">Match Sundays</option>
+          <option value="practice">Practice Weekdays</option>
+        </select>
+      </div>
+      <div id="captain-practice-week-wrap" style="display:none;margin-bottom:16px">
+        <div id="captain-practice-week-tabs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+      <div class="avail-legend">
+        <span><span class="avail-pill yes" style="width:auto;padding:3px 10px">Yes</span></span>
+        <span><span class="avail-pill last-resort" style="width:auto;padding:3px 10px">Last Resort</span></span>
+        <span><span class="avail-pill no" style="width:auto;padding:3px 10px">No</span></span>
+        <span style="font-size:11px;color:var(--text-dim)">· Click any cell to set on behalf of a player</span>
+      </div>
+      <div class="avail-table-wrap"><div id="captain-avail-grid"></div></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">Changes save to Firebase immediately</div>
     </div>
 
   </div><!-- /main -->
@@ -1492,7 +1519,8 @@ const ROSTER = [
   { name: 'Gilbert Onyenwezi',          ntrp: 4.0 },
   { name: 'Jean-Marie Kokou-Abi',       ntrp: 4.0 },
   { name: 'Brahma Thodati',             ntrp: 4.0 },
-  { name: 'Phani Kumar Valluripalli',   ntrp: 3.5 },
+  { name: 'Phani Kumar Valluripalli',   ntrp: 3.5, pref: 'both' },
+  { name: 'Larry Bibb',                 ntrp: 4.0, pref: 'both' },
 ];
 
 const DEFAULT_DATA = {
@@ -1736,12 +1764,13 @@ function logout() {
 // TABS
 // ══════════════════════════════════════
 function switchTab(id) {
-  const panels = ['scores','roster','players','combos','practice','log-entry'];
+  const panels = ['scores','roster','players','combos','practice','log-entry','captain-avail'];
   document.querySelectorAll('.nav-tab').forEach((t,i) => {
     t.classList.toggle('active', panels[i] === id);
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
+  if (id === 'captain-avail') renderCaptainAvailGrid();
 }
 
 // ══════════════════════════════════════
@@ -3268,6 +3297,194 @@ async function initApp() {
   previewWeather();
 }
 
+
+
+
+// ══════════════════════════════════════
+// CAPTAIN AVAILABILITY MANAGEMENT
+// Captain/analyst can set availability for any player
+// Uses same avKey/pavKey as players — fully consistent
+// ══════════════════════════════════════
+let captainPracticeWeek = 0;
+
+async function captainCycleAvail(playerEmail, dateStr, currentState, mode) {
+  if (!playerEmail || !appData) return;
+  const next = AVAIL_CYCLE[(AVAIL_CYCLE.indexOf(currentState) + 1) % AVAIL_CYCLE.length];
+  const key = mode === 'practice' ? pavKey(playerEmail) : avKey(playerEmail);
+  if (!appData[key]) appData[key] = {};
+  appData[key][dateStr] = next;
+  await persistData();
+  renderCaptainAvailGrid();
+}
+
+async function renderCaptainAvailGrid() {
+  const container = document.getElementById('captain-avail-grid');
+  if (!container) return;
+
+  const mode = (document.getElementById('captain-avail-mode') || {}).value || 'match';
+  const weekWrap = document.getElementById('captain-practice-week-wrap');
+  const weekTabs = document.getElementById('captain-practice-week-tabs');
+
+  // Show/hide practice week picker
+  if (weekWrap) weekWrap.style.display = mode === 'practice' ? 'block' : 'none';
+
+  // Fetch latest data
+  let data = appData;
+  try { data = await fsGet() || appData; appData = data; } catch(e) {}
+  const invites = (data && data.invites) || {};
+  const today   = new Date().toISOString().slice(0,10);
+
+  // ── MATCH MODE ──
+  if (mode === 'match') {
+    const BYE_DATES = new Set(MATCH_SCHEDULE.filter(m => m.isBye).map(m => m.date));
+    const HA_MAP    = {};
+    MATCH_SCHEDULE.forEach(m => { HA_MAP[m.date] = { isBye:m.isBye, isHome: m.home==='Baseline Authority' }; });
+
+    // Build rows from ROSTER — find email for each player
+    const rows = ROSTER.map(p => {
+      const key = Object.keys(invites).find(k => invites[k].rosterName === p.name);
+      const inv = key ? invites[key] : null;
+      const email = inv ? inv.email : null;
+      const avail = email ? ((data[avKey(email)]) || {}) : {};
+      return { name: p.name, email, avail };
+    });
+
+    let html = '<table class="avail-table"><thead><tr><th>Player</th>';
+    MATCH_SUNDAYS.forEach(ds => {
+      const isPast = ds < today;
+      const isBye  = BYE_DATES.has(ds);
+      const isNoMatch = NO_MATCH_DATES.has(ds);
+      const ha = HA_MAP[ds];
+      const isHome = ha && !ha.isBye && ha.isHome;
+      const isAway = ha && !ha.isBye && !ha.isHome;
+      let subLabel, subColor;
+      if (isBye)         { subLabel = 'BYE';      subColor = 'var(--warning)'; }
+      else if (isNoMatch){ subLabel = 'NO MATCH'; subColor = 'var(--text-dim)'; }
+      else if (isHome)   { subLabel = 'HOME';     subColor = 'var(--teal)'; }
+      else if (isAway)   { subLabel = 'AWAY';     subColor = 'var(--accent)'; }
+      else               { subLabel = 'SUN';      subColor = 'var(--text-dim)'; }
+      html += '<th class="match-date" style="' + ((isPast || isNoMatch) ? 'opacity:0.45' : '') + '">' +
+        sundayLabel(ds) + '<br><span style="font-size:9px;font-weight:500;color:' + subColor + '">' + subLabel + '</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    rows.forEach(row => {
+      const hasInvite = !!row.email;
+      html += '<tr>';
+      html += '<td>' + row.name +
+        (!hasInvite ? ' <span style="font-size:10px;color:var(--text-dim)">not invited</span>' : '') +
+      '</td>';
+      MATCH_SUNDAYS.forEach(ds => {
+        if (BYE_DATES.has(ds)) {
+          html += '<td><span style="font-size:11px;padding:2px 7px;border-radius:6px;background:rgba(245,166,35,0.12);color:var(--warning);border:1px solid rgba(245,166,35,0.2)">Bye</span></td>';
+          return;
+        }
+        if (NO_MATCH_DATES.has(ds)) {
+          html += '<td><span style="font-size:11px;padding:2px 7px;border-radius:6px;background:rgba(90,106,122,0.1);color:var(--text-dim)">—</span></td>';
+          return;
+        }
+        const isPast = ds < today;
+        const state  = row.avail[ds] || 'no';
+        const cls    = AVAIL_CLASS[state];
+        const lbl    = AVAIL_LABEL[state];
+        if (hasInvite && !isPast) {
+          // Clickable — captain can set for this player
+          html += '<td><span class="avail-pill ' + cls + ' clickable"' +
+            ' data-email="' + row.email + '" data-ds="' + ds + '" data-state="' + state + '" data-mode="match"' +
+            ' onclick="captainCycleAvail(this.dataset.email,this.dataset.ds,this.dataset.state,this.dataset.mode)">' +
+            lbl + '</span></td>';
+        } else {
+          html += '<td><span class="avail-pill ' + cls + '"' + (isPast ? ' style="opacity:0.4"' : '') + '>' + lbl + '</span></td>';
+        }
+      });
+      html += '</tr>';
+    });
+
+    // Summary row
+    html += '<tr style="border-top:2px solid var(--border)"><td style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-top:10px">Yes</td>';
+    MATCH_SUNDAYS.forEach(ds => {
+      if (BYE_DATES.has(ds) || NO_MATCH_DATES.has(ds)) { html += '<td></td>'; return; }
+      const yesCount = rows.filter(r => (r.avail[ds] || 'no') === 'yes').length;
+      const lrCount  = rows.filter(r => (r.avail[ds] || 'no') === 'last-resort').length;
+      const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
+      html += '<td style="text-align:center;padding-top:10px">' +
+        '<div style="font-family:var(--font-mono,monospace);font-size:15px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
+        (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
+      '</td>';
+    });
+    html += '</tr></tbody></table>';
+    container.innerHTML = html;
+
+  } else {
+    // ── PRACTICE MODE ──
+    const week = PRACTICE_DAYS[captainPracticeWeek];
+
+    // Week picker buttons
+    if (weekTabs) {
+      weekTabs.innerHTML = PRACTICE_DAYS.map((w, i) => {
+        const isPast = w[w.length-1] < today;
+        return '<button class="practice-week-btn' + (i === captainPracticeWeek ? ' active' : '') + '"' +
+          (isPast ? ' style="opacity:0.45"' : '') +
+          ' onclick="captainPracticeWeek=' + i + ';renderCaptainAvailGrid()">Wk ' + (i+1) + ' · ' + practiceWeekLabel(w) + '</button>';
+      }).join('');
+    }
+
+    const rows = ROSTER.map(p => {
+      const key = Object.keys(invites).find(k => invites[k].rosterName === p.name);
+      const inv = key ? invites[key] : null;
+      const email = inv ? inv.email : null;
+      const avail = email ? ((data[pavKey(email)]) || {}) : {};
+      return { name: p.name, email, avail };
+    });
+
+    let html = '<table class="avail-table"><thead><tr><th>Player</th>';
+    week.forEach((ds, di) => {
+      const isPast = ds < today;
+      const d = new Date(ds + 'T12:00:00');
+      html += '<th class="match-date" style="' + (isPast ? 'opacity:0.45' : '') + '">' +
+        WEEKDAY_LABELS[di] + '<br><span style="font-size:9px;color:var(--text-dim)">' +
+        (d.getMonth()+1) + '/' + d.getDate() + '</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    rows.forEach(row => {
+      const hasInvite = !!row.email;
+      html += '<tr><td>' + row.name +
+        (!hasInvite ? ' <span style="font-size:10px;color:var(--text-dim)">not invited</span>' : '') +
+      '</td>';
+      week.forEach(ds => {
+        const isPast = ds < today;
+        const state  = row.avail[ds] || 'no';
+        const cls    = AVAIL_CLASS[state];
+        const lbl    = AVAIL_LABEL[state];
+        if (hasInvite && !isPast) {
+          html += '<td><span class="avail-pill ' + cls + ' clickable"' +
+            ' data-email="' + row.email + '" data-ds="' + ds + '" data-state="' + state + '" data-mode="practice"' +
+            ' onclick="captainCycleAvail(this.dataset.email,this.dataset.ds,this.dataset.state,this.dataset.mode)">' +
+            lbl + '</span></td>';
+        } else {
+          html += '<td><span class="avail-pill ' + cls + '"' + (isPast ? ' style="opacity:0.4"' : '') + '>' + lbl + '</span></td>';
+        }
+      });
+      html += '</tr>';
+    });
+
+    // Summary row
+    html += '<tr style="border-top:2px solid var(--border)"><td style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-top:10px">Yes</td>';
+    week.forEach(ds => {
+      if (ds < today) { html += '<td></td>'; return; }
+      const yesCount = rows.filter(r => (r.avail[ds] || 'no') === 'yes').length;
+      const lrCount  = rows.filter(r => (r.avail[ds] || 'no') === 'last-resort').length;
+      const color = yesCount >= 8 ? 'var(--success)' : yesCount >= 5 ? 'var(--warning)' : 'var(--text-dim)';
+      html += '<td style="text-align:center;padding-top:10px">' +
+        '<div style="font-family:var(--font-mono,monospace);font-size:15px;font-weight:600;color:' + color + '">' + yesCount + '</div>' +
+        (lrCount > 0 ? '<div style="font-size:10px;color:var(--warning)">+' + lrCount + ' LR</div>' : '') +
+      '</td>';
+    });
+    html += '</tr></tbody></table>';
+    container.innerHTML = html;
+  }
+}
 
 
 // ══════════════════════════════════════
