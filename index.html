@@ -1326,19 +1326,26 @@ Away Player 1 / Away Player 2
       <div class="section-header">
         <div>
           <div class="section-title">Player Lines</div>
-          <div class="section-subtitle">Singles &amp; Doubles assignments</div>
+          <div class="section-subtitle">Upcoming match lineups · next 3 matches</div>
         </div>
-        <button class="btn-primary" onclick="openLineEditor()">Edit Lines</button>
       </div>
 
-      <div class="lines-grid" id="lines-container"></div>
+      <!-- Upcoming match lineup cards -->
+      <div id="upcoming-lineups-container"></div>
+
+      <!-- Current lineup detail (next match) -->
+      <div style="margin-top:24px">
+        <div style="font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Next Match — Full Lineup</div>
+        <div class="lines-grid" id="lines-container"></div>
+      </div>
 
       <div id="line-editor" style="display:none;margin-top:24px">
         <div class="form-card">
-          <div style="font-family:'Unbounded',sans-serif;font-size:13px;margin-bottom:20px;color:var(--accent)">Edit Line Assignments</div>
+          <div style="font-family:var(--font-sans,sans-serif);font-size:13px;margin-bottom:4px;color:var(--accent);font-weight:600" id="line-editor-title">Edit Line Assignments</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px" id="line-editor-subtitle"></div>
           <div id="line-editor-fields"></div>
           <div class="btn-row">
-            <button class="btn-primary" onclick="saveLines()">Save Lines →</button>
+            <button class="btn-primary" onclick="saveLines()">Save Lineup →</button>
             <button class="btn-secondary" onclick="closeLineEditor()">Cancel</button>
           </div>
         </div>
@@ -1578,7 +1585,7 @@ Away Player 1 / Away Player 2
       <div class="section-header">
         <div>
           <div class="section-title">My Lines</div>
-          <div class="section-subtitle">Your current lineup assignments</div>
+          <div class="section-subtitle">Your assignments for upcoming matches</div>
         </div>
       </div>
       <div id="my-lines-content"></div>
@@ -1747,6 +1754,7 @@ function mergeDefaults(data) {
   if (!data.practiceSessions) data.practiceSessions = [];
   if (!data.rosterPrefs)      data.rosterPrefs = {};
   if (!data.leagueMatches)    data.leagueMatches = [];
+  if (!data.matchLineups)     data.matchLineups = {};
   if (!data.opponents)        data.opponents = {};
   if (!data.opponents['Wilco Warriors']) {
     data.opponents['Wilco Warriors'] = {
@@ -1917,7 +1925,7 @@ function startPolling() {
       if (remoteStr !== localStr) {
         appData = mergeDefaults(remote);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-        renderScores(); renderLines(); renderCombos(); renderPracticeLog();
+        renderScores(); renderLines(); renderUpcomingLineups(); renderCombos(); renderPracticeLog();
         showSyncBadge();
       }
       setFirebaseStatus('live');
@@ -2382,14 +2390,41 @@ function renderLines() {
 }
 
 // ── LINE EDITOR ──
+let _editingMatchDate = null;
+
 function playerOptions(selected) {
   return ROSTER.map(p =>
     `<option value="${p.name}" ${p.name===selected?'selected':''}>${p.name} (${p.ntrp.toFixed(1)})</option>`
   ).join('');
 }
 
-function openLineEditor() {
-  const existing = appData.playerLines || [];
+function openLineEditor(matchDate) {
+  _editingMatchDate = matchDate || null;
+
+  // Load from matchLineups[date] if set, else fall back to playerLines
+  let existing = [];
+  if (matchDate && appData.matchLineups && appData.matchLineups[matchDate] && appData.matchLineups[matchDate].length) {
+    existing = appData.matchLineups[matchDate];
+  } else {
+    existing = appData.playerLines || [];
+  }
+
+  // Update editor header with match context
+  const titleEl = document.getElementById('line-editor-title');
+  const subtitleEl = document.getElementById('line-editor-subtitle');
+  if (matchDate) {
+    const m = MATCH_SCHEDULE.find(s => s.date === matchDate);
+    if (m && titleEl) {
+      const isHome = m.home === 'Baseline Authority';
+      const opponent = isHome ? m.away : m.home;
+      titleEl.textContent = 'Set Lineup — ' + matchDate;
+      if (subtitleEl) subtitleEl.textContent = 'vs ' + opponent + ' · ' + (isHome ? 'HOME' : 'AWAY') + ' · ' + m.venue;
+    }
+  } else {
+    if (titleEl) titleEl.textContent = 'Edit Line Assignments';
+    if (subtitleEl) subtitleEl.textContent = '';
+  }
+
   const gs = (n) => existing.find(l => l.type==='singles' && l.line===n) || { type:'singles', line:n, player:'', notes:'' };
   const gd = (n) => existing.find(l => l.type==='doubles' && l.line===n) || { type:'doubles', line:n, player1:'', player2:'', notes:'' };
   const singles = [gs(1), gs(2)];
@@ -2494,16 +2529,81 @@ async function saveLines() {
     newLines.push({ type:'doubles', line:n, player1: v1, player2: v2,
       notes: [p1,p2].filter(Boolean).map(p => p.ntrp.toFixed(1)).join(' / ') + ' NTRP' });
   });
-  appData.playerLines = newLines;
+
+  // Save to per-match lineup store
+  if (_editingMatchDate) {
+    if (!appData.matchLineups) appData.matchLineups = {};
+    appData.matchLineups[_editingMatchDate] = newLines;
+  }
+
+  // Always sync playerLines to the next upcoming match's lineup for backward compat
+  const today = new Date().toISOString().slice(0,10);
+  const nextMatch = MATCH_SCHEDULE.find(m => !m.isBye && m.date >= today);
+  if (!_editingMatchDate || (nextMatch && _editingMatchDate === nextMatch.date)) {
+    appData.playerLines = newLines;
+  } else if (nextMatch && appData.matchLineups && appData.matchLineups[nextMatch.date]) {
+    appData.playerLines = appData.matchLineups[nextMatch.date];
+  }
+
   await persistData();
   renderLines();
+  renderUpcomingLineups();
   renderRoster();
   closeLineEditor();
-  showToast('Lines saved!');
+  showToast('Lineup saved!');
 }
 
 function closeLineEditor() {
   document.getElementById('line-editor').style.display = 'none';
+  _editingMatchDate = null;
+}
+
+function renderUpcomingLineups() {
+  const container = document.getElementById('upcoming-lineups-container');
+  if (!container || !appData) return;
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = MATCH_SCHEDULE.filter(function(m){ return !m.isBye && m.date >= today; }).slice(0,3);
+  if (!upcoming.length) { container.innerHTML = '<div style="color:var(--text-dim);font-size:13px">No upcoming matches.</div>'; return; }
+
+  container.innerHTML = upcoming.map(function(m) {
+    const isHome = m.home === 'Baseline Authority';
+    const opponent = isHome ? m.away : m.home;
+    const lineup = appData.matchLineups && appData.matchLineups[m.date];
+    const hasLineup = lineup && lineup.length > 0;
+
+    let summary = '';
+    if (hasLineup) {
+      const singles = lineup.filter(function(l){ return l.type==='singles'; }).sort(function(a,b){ return a.line-b.line; });
+      const doubles = lineup.filter(function(l){ return l.type==='doubles'; }).sort(function(a,b){ return a.line-b.line; });
+      summary = '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
+      singles.forEach(function(l){
+        summary += '<div style="font-size:12px;color:var(--text-muted)"><span style="font-family:var(--font-mono,monospace);color:var(--text-dim);margin-right:6px">S'+l.line+'</span>'+(l.player||'—')+'</div>';
+      });
+      doubles.forEach(function(l){
+        summary += '<div style="font-size:12px;color:var(--text-muted)"><span style="font-family:var(--font-mono,monospace);color:var(--text-dim);margin-right:6px">D'+l.line+'</span>'+(l.player1||'—')+' / '+(l.player2||'—')+'</div>';
+      });
+      summary += '</div>';
+    }
+
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+        '<div>' +
+          '<div style="font-weight:600;font-size:14px">'+m.date+' · vs '+opponent+'</div>' +
+          '<div style="font-size:12px;color:var(--text-dim);margin-top:4px">' +
+            '<span class="schedule-ha-badge '+(isHome?'home':'away')+'" style="font-size:10px;padding:2px 7px;margin-right:6px">'+(isHome?'HOME':'AWAY')+'</span>' +
+            m.venue +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+          (hasLineup
+            ? '<span style="font-size:11px;color:var(--success);background:rgba(0,200,150,0.1);border:1px solid rgba(0,200,150,0.3);border-radius:100px;padding:2px 10px">✓ Set</span>'
+            : '<span style="font-size:11px;color:#d97706;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:100px;padding:2px 10px">TBD</span>') +
+          '<button class="btn-secondary" style="padding:5px 12px;font-size:12px" onclick="openLineEditor(\''+m.date+'\')">Edit Lineup</button>' +
+        '</div>' +
+      '</div>' +
+      summary +
+    '</div>';
+  }).join('');
 }
 
 // ══════════════════════════════════════
@@ -3964,6 +4064,7 @@ async function initApp() {
   renderRoster();
   renderScores();
   renderLines();
+  renderUpcomingLineups();
   renderCombos();
   renderPracticeLog();
   renderInviteList();
@@ -4319,38 +4420,81 @@ function switchPlayerTab(id) {
 function renderMyLines() {
   const container = document.getElementById('my-lines-content');
   if (!container || !currentPlayerName || !appData) return;
-  const lines = (appData.playerLines || []);
-  const myLines = lines.filter(l =>
-    l.player === currentPlayerName ||
-    l.player1 === currentPlayerName ||
-    l.player2 === currentPlayerName
-  );
-  if (!myLines.length) {
+
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = MATCH_SCHEDULE.filter(function(m){ return !m.isBye && m.date >= today; }).slice(0,3);
+
+  if (!upcoming.length) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div>' +
-      '<div class="empty-title">Not currently assigned to a line</div>' +
-      '<div class="empty-sub">Check back after the captain sets the lineup</div></div>';
+      '<div class="empty-title">No upcoming matches</div>' +
+      '<div class="empty-sub">Season schedule complete</div></div>';
     return;
   }
-  container.innerHTML = myLines.map(l => {
-    if (l.type === 'singles') {
-      return '<div class="line-card">' +
-        '<div class="line-number">Singles<span>#' + l.line + '</span></div>' +
-        '<div class="line-divider"></div>' +
-        '<div class="line-players"><div class="line-player-name" style="color:var(--teal)">' + l.player + '</div></div>' +
-        '<span class="line-tag tag-singles">Your Line</span>' +
-      '</div>';
-    } else {
-      const partner = l.player1 === currentPlayerName ? l.player2 : l.player1;
-      return '<div class="line-card">' +
-        '<div class="line-number">Doubles<span>#' + l.line + '</span></div>' +
-        '<div class="line-divider"></div>' +
-        '<div class="line-players">' +
-          '<div class="line-player-name" style="color:var(--teal)">' + currentPlayerName + '</div>' +
-          '<div class="line-player-name" style="font-size:13px;color:var(--text-muted)">with ' + partner + '</div>' +
-        '</div>' +
-        '<span class="line-tag tag-doubles">Your Line</span>' +
-      '</div>';
+
+  // Next match date for playerLines fallback
+  const nextDate = upcoming[0].date;
+
+  container.innerHTML = upcoming.map(function(m) {
+    const isHome = m.home === 'Baseline Authority';
+    const opponent = isHome ? m.away : m.home;
+
+    // Resolve lineup: per-match first, fall back to playerLines for next match only
+    var lines = [];
+    if (appData.matchLineups && appData.matchLineups[m.date] && appData.matchLineups[m.date].length) {
+      lines = appData.matchLineups[m.date];
+    } else if (m.date === nextDate) {
+      lines = appData.playerLines || [];
     }
+
+    const hasLineup = lines.length > 0;
+    const myLines = lines.filter(function(l){
+      return l.player === currentPlayerName || l.player1 === currentPlayerName || l.player2 === currentPlayerName;
+    });
+
+    var assignmentHTML = '';
+    if (!hasLineup) {
+      assignmentHTML = '<div style="font-size:13px;color:var(--text-muted);margin-top:10px;padding:10px 0">Lineup not set yet — check back later</div>';
+    } else if (!myLines.length) {
+      assignmentHTML = '<div style="font-size:13px;color:var(--text-muted);margin-top:10px;padding:10px 0">Not in this lineup</div>';
+    } else {
+      assignmentHTML = myLines.map(function(l) {
+        if (l.type === 'singles') {
+          return '<div class="line-card" style="margin-top:12px">' +
+            '<div class="line-number">Singles<span>#' + l.line + '</span></div>' +
+            '<div class="line-divider"></div>' +
+            '<div class="line-players"><div class="line-player-name" style="color:var(--teal)">' + l.player + '</div></div>' +
+            '<span class="line-tag tag-singles">Your Line</span>' +
+          '</div>';
+        } else {
+          const partner = l.player1 === currentPlayerName ? l.player2 : l.player1;
+          return '<div class="line-card" style="margin-top:12px">' +
+            '<div class="line-number">Doubles<span>#' + l.line + '</span></div>' +
+            '<div class="line-divider"></div>' +
+            '<div class="line-players">' +
+              '<div class="line-player-name" style="color:var(--teal)">' + currentPlayerName + '</div>' +
+              '<div class="line-player-name" style="font-size:13px;color:var(--text-muted)">with ' + partner + '</div>' +
+            '</div>' +
+            '<span class="line-tag tag-doubles">Your Line</span>' +
+          '</div>';
+        }
+      }).join('');
+    }
+
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div>' +
+          '<div style="font-weight:600;font-size:14px">' + m.date + ' · vs ' + opponent + '</div>' +
+          '<div style="font-size:12px;color:var(--text-dim);margin-top:4px">' +
+            '<span class="schedule-ha-badge ' + (isHome?'home':'away') + '" style="font-size:10px;padding:2px 7px;margin-right:6px">' + (isHome?'HOME':'AWAY') + '</span>' +
+            m.venue +
+          '</div>' +
+        '</div>' +
+        (hasLineup
+          ? '<span style="font-size:11px;color:var(--success);background:rgba(0,200,150,0.1);border:1px solid rgba(0,200,150,0.3);border-radius:100px;padding:2px 10px;flex-shrink:0">Lineup Set</span>'
+          : '<span style="font-size:11px;color:#d97706;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:100px;padding:2px 10px;flex-shrink:0">TBD</span>') +
+      '</div>' +
+      assignmentHTML +
+    '</div>';
   }).join('');
 }
 
