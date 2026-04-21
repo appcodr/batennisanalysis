@@ -2600,12 +2600,27 @@ function closeLineEditor() {
 
 async function confirmLineup(matchDate) {
   if (!currentPlayerName || !appData) return;
-  if (!appData.lineupConfirmations)          appData.lineupConfirmations = {};
+  if (!appData.lineupConfirmations)            appData.lineupConfirmations = {};
   if (!appData.lineupConfirmations[matchDate]) appData.lineupConfirmations[matchDate] = {};
   appData.lineupConfirmations[matchDate][currentPlayerName] = true;
   await persistData();
   renderMyLines();
   showToast('✓ Confirmed! Captain can see your response.');
+}
+
+async function captainToggleConfirm(matchDate, playerName) {
+  if (!currentUser || !appData || !playerName) return;
+  if (!appData.lineupConfirmations)            appData.lineupConfirmations = {};
+  if (!appData.lineupConfirmations[matchDate]) appData.lineupConfirmations[matchDate] = {};
+  if (appData.lineupConfirmations[matchDate][playerName]) {
+    delete appData.lineupConfirmations[matchDate][playerName];
+    showToast(playerName.split(' ')[0] + ' unconfirmed.');
+  } else {
+    appData.lineupConfirmations[matchDate][playerName] = true;
+    showToast(playerName.split(' ')[0] + ' confirmed ✓');
+  }
+  await persistData();
+  renderUpcomingLineups();
 }
 
 function renderUpcomingLineups() {
@@ -2626,22 +2641,29 @@ function renderUpcomingLineups() {
       const singles  = lineup.filter(function(l){ return l.type==='singles'; }).sort(function(a,b){ return a.line-b.line; });
       const doubles  = lineup.filter(function(l){ return l.type==='doubles'; }).sort(function(a,b){ return a.line-b.line; });
       const confirms = (appData.lineupConfirmations && appData.lineupConfirmations[m.date]) || {};
+      function confirmBtn(date, name) {
+        if (!name) return '';
+        var ok = confirms[name];
+        return '<button onclick="captainToggleConfirm(\''+date+'\',\''+name.replace(/'/g,"\\'")+'\')" ' +
+          'title="'+(ok?'Click to unconfirm':'Click to confirm')+'" ' +
+          'style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:13px;line-height:1;color:'+(ok?'var(--success)':'var(--text-dim)')+'">' +
+          (ok ? '✓' : '○') +
+        '</button>';
+      }
       summary = '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
       singles.forEach(function(l){
-        const confirmed = l.player && confirms[l.player];
         summary += '<div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px">' +
           '<span style="font-family:var(--font-mono,monospace);color:var(--text-dim)">S'+l.line+'</span>' +
           '<span>'+(l.player||'—')+'</span>' +
-          (l.player ? (confirmed ? '<span title="Confirmed" style="color:var(--success)">✓</span>' : '<span title="Not confirmed" style="color:var(--text-dim);font-size:10px">○</span>') : '') +
+          confirmBtn(m.date, l.player) +
         '</div>';
       });
       doubles.forEach(function(l){
-        var c1 = l.player1 && confirms[l.player1], c2 = l.player2 && confirms[l.player2];
         summary += '<div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:4px">' +
           '<span style="font-family:var(--font-mono,monospace);color:var(--text-dim)">D'+l.line+'</span>' +
-          '<span>'+(l.player1||'—')+'</span>'+(l.player1 ? (c1 ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--text-dim);font-size:10px">○</span>') : '')+
+          '<span>'+(l.player1||'—')+'</span>' + confirmBtn(m.date, l.player1) +
           '<span style="color:var(--text-dim)">/</span>' +
-          '<span>'+(l.player2||'—')+'</span>'+(l.player2 ? (c2 ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--text-dim);font-size:10px">○</span>') : '') +
+          '<span>'+(l.player2||'—')+'</span>' + confirmBtn(m.date, l.player2) +
         '</div>';
       });
       summary += '</div>';
@@ -2649,7 +2671,7 @@ function renderUpcomingLineups() {
         doubles.reduce(function(acc,l){ return acc.concat([l.player1,l.player2]); },[])
       ).filter(Boolean);
       var confirmedCount = allPlayers.filter(function(n){ return confirms[n]; }).length;
-      summary += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">'+confirmedCount+' / '+allPlayers.length+' confirmed</div>';
+      summary += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">'+confirmedCount+' / '+allPlayers.length+' confirmed · <span style="color:var(--text-dim)">click ✓/○ to edit</span></div>';
     }
 
     return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">' +
