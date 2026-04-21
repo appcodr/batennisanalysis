@@ -1754,8 +1754,9 @@ function mergeDefaults(data) {
   if (!data.practiceSessions) data.practiceSessions = [];
   if (!data.rosterPrefs)      data.rosterPrefs = {};
   if (!data.leagueMatches)    data.leagueMatches = [];
-  if (!data.matchLineups)     data.matchLineups = {};
-  if (!data.opponents)        data.opponents = {};
+  if (!data.matchLineups)         data.matchLineups = {};
+  if (!data.lineupConfirmations)  data.lineupConfirmations = {};
+  if (!data.opponents)            data.opponents = {};
   if (!data.opponents['Wilco Warriors']) {
     data.opponents['Wilco Warriors'] = {
       roster: [
@@ -2392,10 +2393,32 @@ function renderLines() {
 // ── LINE EDITOR ──
 let _editingMatchDate = null;
 
-function playerOptions(selected) {
-  return ROSTER.map(p =>
-    `<option value="${p.name}" ${p.name===selected?'selected':''}>${p.name} (${p.ntrp.toFixed(1)})</option>`
-  ).join('');
+// Build { playerName → 'yes'|'no'|'last-resort'|'' } for a given match date
+function buildAvailMap(matchDate) {
+  if (!matchDate || !appData) return {};
+  const invites = appData.invites || {};
+  const map = {};
+  ROSTER.forEach(function(p) {
+    const iKey = Object.keys(invites).find(function(k){ return invites[k].rosterName === p.name; });
+    const email = iKey ? invites[iKey].email : null;
+    if (email) {
+      const playerAvail = appData[avKey(email)] || {};
+      map[p.name] = playerAvail[matchDate] || '';
+    } else {
+      map[p.name] = '?'; // no invite on file
+    }
+  });
+  return map;
+}
+
+// avMap: optional { playerName: 'yes'|'no'|'last-resort'|''|'?' }
+// Prefix legend:  ✓ = yes   ✗ = no   ~ = last resort   (blank) = no response   ? = not invited
+function playerOptions(selected, avMap) {
+  return ROSTER.map(p => {
+    const av = avMap ? (avMap[p.name] || '') : '';
+    const prefix = av === 'yes' ? '✓ ' : av === 'no' ? '✗ ' : av === 'last-resort' ? '~ ' : av === '?' ? '? ' : '';
+    return `<option value="${p.name}" ${p.name===selected?'selected':''}>${prefix}${p.name} (${p.ntrp.toFixed(1)})</option>`;
+  }).join('');
 }
 
 function openLineEditor(matchDate) {
@@ -2425,24 +2448,41 @@ function openLineEditor(matchDate) {
     if (subtitleEl) subtitleEl.textContent = '';
   }
 
+  const avMap = buildAvailMap(matchDate);
+  const hasAvailData = matchDate && Object.values(avMap).some(v => v === 'yes' || v === 'no' || v === 'last-resort');
+
   const gs = (n) => existing.find(l => l.type==='singles' && l.line===n) || { type:'singles', line:n, player:'', notes:'' };
   const gd = (n) => existing.find(l => l.type==='doubles' && l.line===n) || { type:'doubles', line:n, player1:'', player2:'', notes:'' };
   const singles = [gs(1), gs(2)];
   const doubles = [gd(1), gd(2), gd(3)];
 
-  let html = '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Singles (2 lines)</div>';
+  let html = '';
+  // Availability legend — only show if we have data
+  if (hasAvailData) {
+    html += '<div style="font-size:11px;color:var(--text-muted);background:var(--clay);border-radius:6px;padding:8px 12px;margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap">' +
+      '<span><b>Availability legend:</b></span>' +
+      '<span style="color:var(--success)">✓ Yes</span>' +
+      '<span style="color:#c0392b">✗ No</span>' +
+      '<span style="color:#d97706">~ Last resort</span>' +
+      '<span style="color:var(--text-dim)">(blank) = No response</span>' +
+    '</div>';
+  } else if (matchDate) {
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">No availability responses yet for this date.</div>';
+  }
+
+  html += '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px">Singles (2 lines)</div>';
   singles.forEach(l => {
     html += '<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:center;margin-bottom:10px">' +
       '<div style="font-size:12px;color:var(--text-muted)">Line ' + l.line + '</div>' +
-      '<select class="form-select line-sel" id="s-line-' + l.line + '" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player) + '</select>' +
+      '<select class="form-select line-sel" id="s-line-' + l.line + '" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player, avMap) + '</select>' +
     '</div>';
   });
   html += '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin:18px 0 12px">Doubles (3 lines)</div>';
   doubles.forEach(l => {
     html += '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:10px;align-items:center;margin-bottom:10px">' +
       '<div style="font-size:12px;color:var(--text-muted)">Line ' + l.line + '</div>' +
-      '<select class="form-select line-sel" id="d-line-' + l.line + '-p1" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player1) + '</select>' +
-      '<select class="form-select line-sel" id="d-line-' + l.line + '-p2" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player2) + '</select>' +
+      '<select class="form-select line-sel" id="d-line-' + l.line + '-p1" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player1, avMap) + '</select>' +
+      '<select class="form-select line-sel" id="d-line-' + l.line + '-p2" style="margin:0" onchange="updateLineConflicts()">' + playerOptions(l.player2, avMap) + '</select>' +
     '</div>';
   });
   document.getElementById('line-editor-fields').innerHTML = html;
@@ -2558,6 +2598,16 @@ function closeLineEditor() {
   _editingMatchDate = null;
 }
 
+async function confirmLineup(matchDate) {
+  if (!currentPlayerName || !appData) return;
+  if (!appData.lineupConfirmations)          appData.lineupConfirmations = {};
+  if (!appData.lineupConfirmations[matchDate]) appData.lineupConfirmations[matchDate] = {};
+  appData.lineupConfirmations[matchDate][currentPlayerName] = true;
+  await persistData();
+  renderMyLines();
+  showToast('✓ Confirmed! Captain can see your response.');
+}
+
 function renderUpcomingLineups() {
   const container = document.getElementById('upcoming-lineups-container');
   if (!container || !appData) return;
@@ -2573,16 +2623,33 @@ function renderUpcomingLineups() {
 
     let summary = '';
     if (hasLineup) {
-      const singles = lineup.filter(function(l){ return l.type==='singles'; }).sort(function(a,b){ return a.line-b.line; });
-      const doubles = lineup.filter(function(l){ return l.type==='doubles'; }).sort(function(a,b){ return a.line-b.line; });
+      const singles  = lineup.filter(function(l){ return l.type==='singles'; }).sort(function(a,b){ return a.line-b.line; });
+      const doubles  = lineup.filter(function(l){ return l.type==='doubles'; }).sort(function(a,b){ return a.line-b.line; });
+      const confirms = (appData.lineupConfirmations && appData.lineupConfirmations[m.date]) || {};
       summary = '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
       singles.forEach(function(l){
-        summary += '<div style="font-size:12px;color:var(--text-muted)"><span style="font-family:var(--font-mono,monospace);color:var(--text-dim);margin-right:6px">S'+l.line+'</span>'+(l.player||'—')+'</div>';
+        const confirmed = l.player && confirms[l.player];
+        summary += '<div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px">' +
+          '<span style="font-family:var(--font-mono,monospace);color:var(--text-dim)">S'+l.line+'</span>' +
+          '<span>'+(l.player||'—')+'</span>' +
+          (l.player ? (confirmed ? '<span title="Confirmed" style="color:var(--success)">✓</span>' : '<span title="Not confirmed" style="color:var(--text-dim);font-size:10px">○</span>') : '') +
+        '</div>';
       });
       doubles.forEach(function(l){
-        summary += '<div style="font-size:12px;color:var(--text-muted)"><span style="font-family:var(--font-mono,monospace);color:var(--text-dim);margin-right:6px">D'+l.line+'</span>'+(l.player1||'—')+' / '+(l.player2||'—')+'</div>';
+        var c1 = l.player1 && confirms[l.player1], c2 = l.player2 && confirms[l.player2];
+        summary += '<div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:4px">' +
+          '<span style="font-family:var(--font-mono,monospace);color:var(--text-dim)">D'+l.line+'</span>' +
+          '<span>'+(l.player1||'—')+'</span>'+(l.player1 ? (c1 ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--text-dim);font-size:10px">○</span>') : '')+
+          '<span style="color:var(--text-dim)">/</span>' +
+          '<span>'+(l.player2||'—')+'</span>'+(l.player2 ? (c2 ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--text-dim);font-size:10px">○</span>') : '') +
+        '</div>';
       });
       summary += '</div>';
+      var allPlayers = singles.map(function(l){ return l.player; }).concat(
+        doubles.reduce(function(acc,l){ return acc.concat([l.player1,l.player2]); },[])
+      ).filter(Boolean);
+      var confirmedCount = allPlayers.filter(function(n){ return confirms[n]; }).length;
+      summary += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted)">'+confirmedCount+' / '+allPlayers.length+' confirmed</div>';
     }
 
     return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">' +
@@ -4451,6 +4518,14 @@ function renderMyLines() {
       return l.player === currentPlayerName || l.player1 === currentPlayerName || l.player2 === currentPlayerName;
     });
 
+    // Confirmation logic: show button within 5 days before the match
+    var todayMs   = new Date(today).getTime();
+    var matchMs   = new Date(m.date).getTime();
+    var daysAway  = Math.round((matchMs - todayMs) / 86400000);
+    var inWindow  = daysAway >= 0 && daysAway <= 5;
+    var confirms  = (appData.lineupConfirmations && appData.lineupConfirmations[m.date]) || {};
+    var alreadyConfirmed = !!confirms[currentPlayerName];
+
     var assignmentHTML = '';
     if (!hasLineup) {
       assignmentHTML = '<div style="font-size:13px;color:var(--text-muted);margin-top:10px;padding:10px 0">Lineup not set yet — check back later</div>';
@@ -4466,7 +4541,7 @@ function renderMyLines() {
             '<span class="line-tag tag-singles">Your Line</span>' +
           '</div>';
         } else {
-          const partner = l.player1 === currentPlayerName ? l.player2 : l.player1;
+          var partner = l.player1 === currentPlayerName ? l.player2 : l.player1;
           return '<div class="line-card" style="margin-top:12px">' +
             '<div class="line-number">Doubles<span>#' + l.line + '</span></div>' +
             '<div class="line-divider"></div>' +
@@ -4478,6 +4553,22 @@ function renderMyLines() {
           '</div>';
         }
       }).join('');
+      // Confirmation CTA — shown within 5 days of match if player is in lineup
+      if (inWindow) {
+        if (alreadyConfirmed) {
+          assignmentHTML += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,200,150,0.08);border:1px solid rgba(0,200,150,0.25);border-radius:8px">' +
+            '<span style="color:var(--success);font-size:16px">✓</span>' +
+            '<span style="font-size:13px;font-weight:500;color:var(--success)">You\'re confirmed for this match</span>' +
+          '</div>';
+        } else {
+          assignmentHTML += '<div style="margin-top:12px">' +
+            '<button class="btn-primary" style="padding:9px 20px;font-size:13px" onclick="confirmLineup(\'' + m.date + '\')">' +
+              '✓ Confirm I\'m playing' +
+            '</button>' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Let the captain know you\'ll be there</div>' +
+          '</div>';
+        }
+      }
     }
 
     return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px">' +
