@@ -3615,68 +3615,102 @@ function toggleImportPanel() {
 }
 
 function parseUstaText(raw) {
-  var lines = raw.split('\n').map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
-  if (!lines.length) throw new Error('No text to parse.');
+  // Trim each line but keep empty lines so positional logic works;
+  // do NOT strip U+FFFC (trophy icon) yet — it tells us who won each line
+  var lines = raw.split('\n').map(function(l){ return l.trim(); });
 
-  // Find "Home Team vs Away Team" header in first 8 lines
-  var homeTeam = '', awayTeam = '', matchDate = '';
-  for (var i = 0; i < Math.min(lines.length, 8); i++) {
-    var vsM = lines[i].match(/^(.+?)\s+vs\.?\s+(.+?)(?:\s+\d[-–]\d)?$/i);
-    if (vsM && !/^\d/.test(lines[i])) {
-      homeTeam = vsM[1].trim();
-      awayTeam = vsM[2].trim();
-    }
-    var dateM = lines[i].match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-    if (dateM) {
-      var dp = dateM[1].split('/');
-      matchDate = dp[2]+'-'+dp[0].padStart(2,'0')+'-'+dp[1].padStart(2,'0');
-    }
+  // ── Find team names ──────────────────────────────────────────────
+  // Format: "Home Team Name" … "Vs." … "Away Team Name" … then first "1# Singles/Doubles"
+  var firstSectionIdx = lines.length;
+  for (var i = 0; i < lines.length; i++) {
+    if (/^[1-3]#\s*(Singles|Doubles)/i.test(lines[i])) { firstSectionIdx = i; break; }
   }
-  if (!homeTeam || !awayTeam) throw new Error('Could not find team names. First line should be "Home Team vs Away Team".');
+  var hdr = lines.slice(0, firstSectionIdx);
 
-  // Split into line sections by "1 Singles", "2 Doubles", etc.
+  // First top-level "Vs." in header separates home from visiting team name
+  var hvsIdx = -1;
+  for (var i = 0; i < hdr.length; i++) {
+    if (/^Vs\.?$/i.test(hdr[i])) { hvsIdx = i; break; }
+  }
+  if (hvsIdx < 0) throw new Error('Could not find "Vs." separator between team names at the top of the text.');
+
+  var SKIP_HDR = /^(Team ID|Home Team|Visiting Team|3rd Set|Match Win|Entry Date|Date Scheduled|Date Match|^\s*$)/i;
+  var homeTeam = '', awayTeam = '', matchDate = '';
+
+  for (var i = hvsIdx - 1; i >= 0; i--) {
+    if (hdr[i] && !SKIP_HDR.test(hdr[i]) && !/^\uFFFC/.test(hdr[i])) { homeTeam = hdr[i]; break; }
+  }
+  for (var i = hvsIdx + 1; i < hdr.length; i++) {
+    if (hdr[i] && !SKIP_HDR.test(hdr[i]) && !/^\uFFFC/.test(hdr[i])) { awayTeam = hdr[i]; break; }
+  }
+  if (!homeTeam || !awayTeam) throw new Error('Could not extract team names. Expected team name → "Vs." → visiting team name near the top.');
+
+  // Date from "Date Match Played: M/D/YYYY"
+  for (var i = 0; i < hdr.length; i++) {
+    var dm = hdr[i].match(/Date Match Played:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (dm) { matchDate = dm[3]+'-'+dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0'); break; }
+    // Also accept bare "M/D/YYYY" near the top
+    dm = hdr[i].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (dm && !matchDate) matchDate = dm[3]+'-'+dm[1].padStart(2,'0')+'-'+dm[2].padStart(2,'0');
+  }
+
+  // ── Split into line sections ──────────────────────────────────────
   var sections = [], cur = null;
   lines.forEach(function(line) {
-    var hdr = line.match(/^([1-3])\s*#?\s*(Singles|Doubles)/i);
-    if (hdr) {
+    var hdr2 = line.match(/^([1-3])#\s*(Singles|Doubles)/i);
+    if (hdr2) {
       if (cur) sections.push(cur);
-      cur = { lineNum: +hdr[1], type: hdr[2][0].toUpperCase()+hdr[2].slice(1).toLowerCase(), rawLines: [] };
+      cur = { lineNum: +hdr2[1], type: hdr2[2][0].toUpperCase()+hdr2[2].slice(1).toLowerCase(), rawLines: [] };
     } else if (cur) {
-      cur.rawLines.push(line);
+      // Stop collecting when we hit the TOTAL TEAM SCORE footer
+      if (/^TOTAL TEAM SCORE/i.test(line)) { sections.push(cur); cur = null; }
+      else cur.rawLines.push(line);
     }
   });
   if (cur) sections.push(cur);
-  if (!sections.length) throw new Error('No line sections found. Expected "1 Singles", "2 Singles", "1 Doubles", etc.');
+  if (!sections.length) throw new Error('No line sections found. Expected "1# Singles", "1# Doubles", etc.');
+
+  var TIME_RE   = /^\d{1,2}:\d{2}\s*(am|pm)?$/i;
+  var SKIP_LINE = /^(Completed|Match In Progress)$/i;
 
   var parsedLines = sections.map(function(sec) {
-    // Score line: only digits, dashes, spaces, parens
-    var scoreIdx = -1;
-    sec.rawLines.forEach(function(l, idx) {
-      if (scoreIdx < 0 && /^[\d\s\-\(\)]+$/.test(l) && /\d-\d/.test(l)) scoreIdx = idx;
-    });
-    var scoreLine = scoreIdx >= 0 ? sec.rawLines[scoreIdx] : '';
-    var playerLines = sec.rawLines.filter(function(_, idx){ return idx !== scoreIdx; }).filter(function(l){ return l; });
+    // Find inner "Vs." to split home players from away players
+    var vsIdx2 = -1;
+    for (var i = 0; i < sec.rawLines.length; i++) {
+      if (/^Vs\.?$/i.test(sec.rawLines[i])) { vsIdx2 = i; break; }
+    }
+    var beforeVs = vsIdx2 >= 0 ? sec.rawLines.slice(0, vsIdx2) : [];
+    var afterVs  = vsIdx2 >= 0 ? sec.rawLines.slice(vsIdx2 + 1) : sec.rawLines;
 
-    function cleanName(s) { return s.replace(/,\s*.+$/, '').trim() || s.trim(); }
+    // Trophy icon (U+FFFC) position determines winner
+    var trophyHome = beforeVs.some(function(l){ return l.indexOf('\uFFFC') >= 0; });
+    var trophyAway = afterVs.some(function(l){ return l.indexOf('\uFFFC') >= 0; });
 
-    var homePlayers = [], awayPlayers = [];
-    if (sec.type === 'Doubles') {
-      var firstPair  = (playerLines[0]||'').split('/').map(cleanName).filter(Boolean);
-      var secondPair = (playerLines[1]||'').split('/').map(cleanName).filter(Boolean);
-      homePlayers = firstPair.length ? firstPair : [cleanName(playerLines[0]||'')];
-      awayPlayers = secondPair.length ? secondPair : [cleanName(playerLines[2]||playerLines[1]||'')];
-    } else {
-      homePlayers = playerLines[0] ? [cleanName(playerLines[0])] : [];
-      awayPlayers = playerLines[1] ? [cleanName(playerLines[1])] : [];
+    function isScore(l) { return /^\d+-\d+$/.test(l); }
+    function isPlayerName(l) {
+      return l && l.indexOf('\uFFFC') < 0 && !TIME_RE.test(l) && !SKIP_LINE.test(l) && !isScore(l);
     }
 
-    var sets = (scoreLine.match(/\d+-\d+/g)||[]).map(function(s) {
+    var homePlayers = beforeVs.filter(isPlayerName);
+    var scoreLines  = afterVs.filter(isScore);
+    // Away players = everything before the first score line (excl. trophy/skip/empty)
+    var firstScoreInAway = afterVs.findIndex(isScore);
+    var awaySlice = firstScoreInAway >= 0 ? afterVs.slice(0, firstScoreInAway) : afterVs;
+    var awayPlayers = awaySlice.filter(isPlayerName);
+
+    var sets = scoreLines.map(function(s) {
       var p = s.split('-').map(Number); return { home: p[0], away: p[1] };
     });
 
-    var hw = 0, aw = 0;
-    sets.forEach(function(s) { if (s.home > s.away) hw++; else aw++; });
-    var winner = hw >= aw ? 'home' : 'away';
+    // Winner: prefer trophy icon; fall back to set count (works for 2-set matches)
+    var winner;
+    if (trophyHome)      winner = 'home';
+    else if (trophyAway) winner = 'away';
+    else {
+      var hw = sets.filter(function(s){ return s.home > s.away; }).length;
+      var aw = sets.filter(function(s){ return s.away > s.home; }).length;
+      winner = hw >= aw ? 'home' : 'away';
+    }
 
     return { lineNum: sec.lineNum, type: sec.type, homePlayers: homePlayers, awayPlayers: awayPlayers, sets: sets, winner: winner };
   });
