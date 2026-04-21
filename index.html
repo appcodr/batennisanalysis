@@ -3942,7 +3942,7 @@ async function handlePlayerLogin(email, name, picture) {
     const invite = invites[foundKey];
     currentPlayerUser = { email, name, picture };
     currentPlayerName = invite.rosterName || name;
-    if (!appData) appData = data || {};
+    appData = mergeDefaults(data || appData || {});
     if (!appData.invites) appData.invites = {};
     appData.invites[foundKey].status = 'joined';
     appData.invites[foundKey].lastSeen = new Date().toISOString();
