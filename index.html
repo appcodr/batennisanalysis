@@ -1044,14 +1044,14 @@
   }
   .scout-close:hover { color: var(--text); background: var(--surface2); }
   .scout-player-header {
-    display: grid; grid-template-columns: 1fr 56px 1.4fr 28px;
+    display: grid; grid-template-columns: 1fr 48px 44px 1.4fr 28px;
     gap: 10px; padding: 0 0 8px;
     font-size: 11px; font-weight: 600; letter-spacing: .05em;
     text-transform: uppercase; color: var(--text-dim);
     border-bottom: 2px solid var(--border-accent); margin-bottom: 4px;
   }
   .scout-player-row {
-    display: grid; grid-template-columns: 1fr 56px 1.4fr 28px;
+    display: grid; grid-template-columns: 1fr 48px 44px 1.4fr 28px;
     gap: 10px; align-items: center;
     padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
   }
@@ -1077,6 +1077,15 @@
     padding: 0; text-align: left;
   }
   .scout-team-btn:hover { color: var(--teal); }
+
+  /* ── LEAGUE MATCH IMPORT ── */
+  .import-match-panel { margin-top:20px; padding:20px; background:var(--surface); border:1px solid rgba(0,180,216,0.25); border-radius:var(--radius); }
+  .match-preview { margin-top:16px; border:1px solid var(--border-accent); border-radius:var(--radius); overflow:hidden; }
+  .match-preview-header { padding:12px 16px; background:var(--clay); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  .preview-line-grid { display:grid; grid-template-columns:56px 1fr 1fr 90px; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; align-items:center; }
+  .preview-line-hdr { display:grid; grid-template-columns:56px 1fr 1fr 90px; gap:8px; padding:7px 16px; background:#f7faf8; border-bottom:1px solid var(--border); font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-dim); }
+  .league-scorecard { margin-bottom:20px; border:1px solid var(--border-accent); border-radius:var(--radius); overflow:hidden; }
+  .league-sc-header { padding:10px 14px; background:var(--clay); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
 
   /* ── RESPONSIVE ── */
   @media (max-width: 600px) {
@@ -1184,8 +1193,44 @@
 
       <!-- Season Schedule -->
       <div style="margin-top:28px">
-        <div style="font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px">Full Season Schedule</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)">Full Season Schedule</div>
+          <button class="btn-secondary" style="padding:6px 14px;font-size:12px" onclick="toggleImportPanel()">+ Import USTA Match</button>
+        </div>
         <div id="captain-schedule-content"></div>
+      </div>
+
+      <!-- Import USTA Match Panel -->
+      <div id="import-match-panel" class="import-match-panel" style="display:none">
+        <div style="font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;color:var(--teal);margin-bottom:16px;letter-spacing:.05em">IMPORT USTA MATCH SCORECARD</div>
+        <div class="form-group">
+          <label class="form-label">Paste USTA match scorecard text below</label>
+          <textarea id="usta-import-text" class="form-input" rows="14" style="width:100%;font-family:var(--font-mono,monospace);font-size:12px;resize:vertical" placeholder="Paste the match text from USTA TennisLink here.
+
+Expected format:
+Home Team vs Away Team
+MM/DD/YYYY
+
+1 Singles
+Home Player Name
+Away Player Name
+6-4 6-2
+
+2 Singles
+Home Player Name
+Away Player Name
+3-6 6-4 1-0
+
+1 Doubles
+Home Player 1 / Home Player 2
+Away Player 1 / Away Player 2
+6-3 6-2"></textarea>
+        </div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn-primary" onclick="previewLeagueMatch()">Parse &amp; Preview →</button>
+          <button class="btn-secondary" onclick="document.getElementById('import-match-panel').style.display='none'">Cancel</button>
+        </div>
+        <div id="import-preview-area"></div>
       </div>
 
       <!-- Add Match Modal -->
@@ -1701,6 +1746,7 @@ function mergeDefaults(data) {
   if (!data.matchHistory)     data.matchHistory = [];
   if (!data.practiceSessions) data.practiceSessions = [];
   if (!data.rosterPrefs)      data.rosterPrefs = {};
+  if (!data.leagueMatches)    data.leagueMatches = [];
   if (!data.opponents)        data.opponents = {};
   if (!data.opponents['Wilco Warriors']) {
     data.opponents['Wilco Warriors'] = {
@@ -3348,6 +3394,25 @@ function switchScoutTab(tab) {
   renderScoutBody();
 }
 
+function _playerRecord(playerName) {
+  // Returns {w,l} for an opponent player across all leagueMatches
+  var w = 0, l = 0;
+  var lm = (appData && appData.leagueMatches) || [];
+  lm.forEach(function(match) {
+    var isHome = match.homeTeam === _scoutTeam;
+    var isAway = match.awayTeam === _scoutTeam;
+    if (!isHome && !isAway) return;
+    match.lines.forEach(function(line) {
+      var players = isHome ? line.homePlayers : line.awayPlayers;
+      var found = players.some(function(p){ return p.toLowerCase().indexOf(playerName.toLowerCase().split(' ')[0]) >= 0; });
+      if (!found) return;
+      var won = (isHome && line.winner==='home') || (isAway && line.winner==='away');
+      if (won) w++; else l++;
+    });
+  });
+  return { w:w, l:l };
+}
+
 function renderScoutBody() {
   const body = document.getElementById('scout-body');
   if (!body || !_scoutTeam || !appData) return;
@@ -3356,20 +3421,27 @@ function renderScoutBody() {
   const opp        = appData.opponents[_scoutTeam];
   const isCaptain  = !!currentUser;
   const isLoggedIn = isCaptain || !!currentPlayerUser;
+  const leagueMatches = ((appData.leagueMatches)||[]).filter(function(m){
+    return m.homeTeam===_scoutTeam || m.awayTeam===_scoutTeam;
+  });
 
   if (_scoutTab === 'roster') {
     let html = '';
     if (opp.roster && opp.roster.length) {
-      html += '<div class="scout-player-header"><span>Player</span><span style="text-align:center">NTRP</span><span>Watch Out / Notes</span><span></span></div>';
+      html += '<div class="scout-player-header"><span>Player</span><span style="text-align:center">NTRP</span><span style="text-align:center">W-L</span><span>Watch Out / Notes</span><span></span></div>';
       html += opp.roster.map(function(p, i) {
-        return '<div class="scout-player-row">' +
-          '<span style="font-weight:500">' + p.name + '</span>' +
+        var rec = _playerRecord(p.name);
+        var recStr = rec.w+rec.l > 0 ? rec.w+'-'+rec.l : '—';
+        var recColor = rec.w > rec.l ? 'var(--success)' : rec.l > rec.w ? '#c0392b' : 'var(--text-muted)';
+        return '<div class="scout-player-row" style="grid-template-columns:1fr 48px 44px 1.4fr 28px">' +
+          '<span style="font-weight:500">' + esc(p.name) + '</span>' +
           '<span style="text-align:center;color:var(--text-muted)">' + (p.ntrp||4.0) + '</span>' +
+          '<span style="text-align:center;font-family:var(--font-mono,monospace);font-size:12px;font-weight:600;color:'+recColor+'">' + recStr + '</span>' +
           (isLoggedIn
             ? '<textarea class="scout-note-input" rows="1" placeholder="Strengths, tendencies, watch out for..." ' +
                 'onblur="saveScoutPlayerNote(' + i + ',this.value)" ' +
                 'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();this.blur()}">' + (p.watchOut||'') + '</textarea>'
-            : '<span style="font-size:12px;color:var(--text-muted)">' + (p.watchOut||'—') + '</span>'
+            : '<span style="font-size:12px;color:var(--text-muted)">' + esc(p.watchOut||'—') + '</span>'
           ) +
           (isCaptain
             ? '<button onclick="deleteScoutPlayer(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:15px;padding:2px 4px" title="Remove">✕</button>'
@@ -3391,12 +3463,45 @@ function renderScoutBody() {
 
   } else if (_scoutTab === 'scores') {
     let html = '';
+    // League matches (imported)
+    if (leagueMatches.length) {
+      leagueMatches.forEach(function(match, mi) {
+        var isHome = match.homeTeam === _scoutTeam;
+        html += '<div class="league-scorecard">';
+        html += '<div class="league-sc-header">';
+        html += '<div><span style="font-weight:600;font-size:13px">'+esc(match.homeTeam)+' vs '+esc(match.awayTeam)+'</span>';
+        html += '<span style="font-size:12px;color:var(--text-muted);margin-left:10px">'+(match.matchDate||'')+'</span></div>';
+        html += '<div style="display:flex;align-items:center;gap:8px">';
+        html += '<span style="font-family:var(--font-mono,monospace);font-weight:700;font-size:15px">'+match.homeWins+' – '+match.awayWins+'</span>';
+        if (isCaptain) html += '<button onclick="deleteLeagueMatch('+mi+')" style="background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:14px;padding:2px 6px" title="Delete">✕</button>';
+        html += '</div></div>';
+        html += '<div class="preview-line-hdr"><span>Line</span><span>'+esc(match.homeTeam)+'</span><span>'+esc(match.awayTeam)+'</span><span>Sets</span></div>';
+        match.lines.forEach(function(line) {
+          var label = line.lineNum+(line.type==='Singles'?'S':'D');
+          var homeStr = line.homePlayers.join(' / ');
+          var awayStr = line.awayPlayers.join(' / ');
+          var setsStr = line.sets.map(function(s){ return s.home+'-'+s.away; }).join(' ');
+          var hw = line.winner==='home';
+          html += '<div class="preview-line-grid">';
+          html += '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">'+label+'</span>';
+          html += '<span style="font-weight:'+(hw?'600':'400')+';color:'+(hw?'var(--text)':'var(--text-muted)')+'">'+esc(homeStr)+(hw?' <span style="color:var(--success);font-size:11px;font-weight:700">W</span>':'')+'</span>';
+          html += '<span style="font-weight:'+(!hw?'600':'400')+';color:'+(!hw?'var(--text)':'var(--text-muted)')+'">'+esc(awayStr)+(!hw?' <span style="color:var(--success);font-size:11px;font-weight:700">W</span>':'')+'</span>';
+          html += '<span style="font-family:var(--font-mono,monospace);font-size:12px">'+esc(setsStr)+'</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      });
+    } else {
+      html += '<div style="color:var(--text-dim);font-size:13px;padding:16px 0">No imported match scorecards yet. Use "Import USTA Match" in the captain schedule view to add them.</div>';
+    }
+    // Legacy manual scores (keep for backward compat)
     if (opp.recentScores && opp.recentScores.length) {
+      html += '<div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin:16px 0 8px">Manual Scores</div>';
       html += opp.recentScores.map(function(s, i) {
         return '<div class="scout-score-row">' +
-          '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim);min-width:92px">' + s.date + '</span>' +
-          '<span style="flex:1;font-size:13px">vs ' + s.opponent + '</span>' +
-          '<span style="font-family:var(--font-mono,monospace);font-size:13px;font-weight:500">' + s.score + '</span>' +
+          '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim);min-width:92px">' + esc(s.date) + '</span>' +
+          '<span style="flex:1;font-size:13px">vs ' + esc(s.opponent) + '</span>' +
+          '<span style="font-family:var(--font-mono,monospace);font-size:13px;font-weight:500">' + esc(s.score) + '</span>' +
           '<span class="schedule-result-chip ' + (s.result==='W'?'win':'loss') + '" style="margin-left:6px">' + s.result + '</span>' +
           (isCaptain
             ? '<button onclick="deleteScoutScore(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:15px;padding:2px 6px" title="Remove">✕</button>'
@@ -3404,11 +3509,9 @@ function renderScoutBody() {
           ) +
         '</div>';
       }).join('');
-    } else {
-      html += '<div style="color:var(--text-dim);font-size:13px;padding:16px 0">No scores recorded yet.</div>';
     }
     if (isCaptain) {
-      html += '<div class="scout-add-row">' +
+      html += '<div class="scout-add-row" style="margin-top:12px">' +
         '<input class="form-input" id="scout-sc-date" type="date" style="margin:0;flex:0 0 136px" />' +
         '<input class="form-input" id="scout-sc-opp" placeholder="vs opponent" style="flex:1;min-width:110px;margin:0" />' +
         '<input class="form-input" id="scout-sc-score" placeholder="e.g. 4-1" style="width:80px;margin:0" />' +
@@ -3495,6 +3598,171 @@ async function saveScoutTeamNotes() {
   appData.opponents[_scoutTeam].teamNotes = el.value;
   await persistData();
   showToast('Team notes saved.');
+}
+
+// ══════════════════════════════════════
+// LEAGUE MATCH IMPORT
+// ══════════════════════════════════════
+let _parsedLeagueMatch = null;
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleImportPanel() {
+  var p = document.getElementById('import-match-panel');
+  if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function parseUstaText(raw) {
+  var lines = raw.split('\n').map(function(l){ return l.trim(); }).filter(function(l){ return l.length > 0; });
+  if (!lines.length) throw new Error('No text to parse.');
+
+  // Find "Home Team vs Away Team" header in first 8 lines
+  var homeTeam = '', awayTeam = '', matchDate = '';
+  for (var i = 0; i < Math.min(lines.length, 8); i++) {
+    var vsM = lines[i].match(/^(.+?)\s+vs\.?\s+(.+?)(?:\s+\d[-–]\d)?$/i);
+    if (vsM && !/^\d/.test(lines[i])) {
+      homeTeam = vsM[1].trim();
+      awayTeam = vsM[2].trim();
+    }
+    var dateM = lines[i].match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+    if (dateM) {
+      var dp = dateM[1].split('/');
+      matchDate = dp[2]+'-'+dp[0].padStart(2,'0')+'-'+dp[1].padStart(2,'0');
+    }
+  }
+  if (!homeTeam || !awayTeam) throw new Error('Could not find team names. First line should be "Home Team vs Away Team".');
+
+  // Split into line sections by "1 Singles", "2 Doubles", etc.
+  var sections = [], cur = null;
+  lines.forEach(function(line) {
+    var hdr = line.match(/^([1-3])\s*#?\s*(Singles|Doubles)/i);
+    if (hdr) {
+      if (cur) sections.push(cur);
+      cur = { lineNum: +hdr[1], type: hdr[2][0].toUpperCase()+hdr[2].slice(1).toLowerCase(), rawLines: [] };
+    } else if (cur) {
+      cur.rawLines.push(line);
+    }
+  });
+  if (cur) sections.push(cur);
+  if (!sections.length) throw new Error('No line sections found. Expected "1 Singles", "2 Singles", "1 Doubles", etc.');
+
+  var parsedLines = sections.map(function(sec) {
+    // Score line: only digits, dashes, spaces, parens
+    var scoreIdx = -1;
+    sec.rawLines.forEach(function(l, idx) {
+      if (scoreIdx < 0 && /^[\d\s\-\(\)]+$/.test(l) && /\d-\d/.test(l)) scoreIdx = idx;
+    });
+    var scoreLine = scoreIdx >= 0 ? sec.rawLines[scoreIdx] : '';
+    var playerLines = sec.rawLines.filter(function(_, idx){ return idx !== scoreIdx; }).filter(function(l){ return l; });
+
+    function cleanName(s) { return s.replace(/,\s*.+$/, '').trim() || s.trim(); }
+
+    var homePlayers = [], awayPlayers = [];
+    if (sec.type === 'Doubles') {
+      var firstPair  = (playerLines[0]||'').split('/').map(cleanName).filter(Boolean);
+      var secondPair = (playerLines[1]||'').split('/').map(cleanName).filter(Boolean);
+      homePlayers = firstPair.length ? firstPair : [cleanName(playerLines[0]||'')];
+      awayPlayers = secondPair.length ? secondPair : [cleanName(playerLines[2]||playerLines[1]||'')];
+    } else {
+      homePlayers = playerLines[0] ? [cleanName(playerLines[0])] : [];
+      awayPlayers = playerLines[1] ? [cleanName(playerLines[1])] : [];
+    }
+
+    var sets = (scoreLine.match(/\d+-\d+/g)||[]).map(function(s) {
+      var p = s.split('-').map(Number); return { home: p[0], away: p[1] };
+    });
+
+    var hw = 0, aw = 0;
+    sets.forEach(function(s) { if (s.home > s.away) hw++; else aw++; });
+    var winner = hw >= aw ? 'home' : 'away';
+
+    return { lineNum: sec.lineNum, type: sec.type, homePlayers: homePlayers, awayPlayers: awayPlayers, sets: sets, winner: winner };
+  });
+
+  var homeWins = parsedLines.filter(function(l){ return l.winner==='home'; }).length;
+  var awayWins = parsedLines.filter(function(l){ return l.winner==='away'; }).length;
+
+  return { homeTeam: homeTeam, awayTeam: awayTeam, matchDate: matchDate, lines: parsedLines, homeWins: homeWins, awayWins: awayWins };
+}
+
+function renderLeagueMatchCard(match, showSaveBtn) {
+  var html = '<div class="match-preview">';
+  html += '<div class="match-preview-header">';
+  html += '<div><div style="font-weight:600;font-size:14px">'+esc(match.homeTeam)+' vs '+esc(match.awayTeam)+'</div>';
+  html += '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">'+(match.matchDate||'No date')+'</div></div>';
+  html += '<div style="font-family:var(--font-mono,monospace);font-size:20px;font-weight:700">';
+  html += '<span style="color:var(--accent)">'+match.homeWins+'</span>';
+  html += '<span style="color:var(--text-dim);font-size:14px"> – </span>';
+  html += '<span style="color:var(--text-muted)">'+match.awayWins+'</span></div>';
+  html += '</div>';
+
+  html += '<div class="preview-line-hdr"><span>Line</span><span>'+esc(match.homeTeam)+'</span><span>'+esc(match.awayTeam)+'</span><span>Sets</span></div>';
+
+  match.lines.forEach(function(line) {
+    var label   = line.lineNum + (line.type==='Singles'?'S':'D');
+    var homeStr = line.homePlayers.join(' / ');
+    var awayStr = line.awayPlayers.join(' / ');
+    var setsStr = line.sets.map(function(s){ return s.home+'-'+s.away; }).join(' ');
+    var hw      = line.winner==='home';
+    html += '<div class="preview-line-grid">';
+    html += '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">'+label+'</span>';
+    html += '<span style="font-weight:'+(hw?'600':'400')+';color:'+(hw?'var(--text)':'var(--text-muted)')+'">'+esc(homeStr)+(hw?' <span style="font-size:11px;color:var(--success);font-weight:700">W</span>':'')+'</span>';
+    html += '<span style="font-weight:'+(!hw?'600':'400')+';color:'+(!hw?'var(--text)':'var(--text-muted)')+'">'+esc(awayStr)+(!hw?' <span style="font-size:11px;color:var(--success);font-weight:700">W</span>':'')+'</span>';
+    html += '<span style="font-family:var(--font-mono,monospace);font-size:12px">'+esc(setsStr)+'</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  if (showSaveBtn) {
+    html += '<div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px">';
+    html += '<button class="btn-primary" onclick="saveLeagueMatch()" style="padding:8px 24px">Save Match →</button>';
+    html += '</div>';
+  }
+  return html;
+}
+
+function previewLeagueMatch() {
+  var raw  = (document.getElementById('usta-import-text')||{}).value || '';
+  var area = document.getElementById('import-preview-area');
+  if (!area) return;
+  try {
+    _parsedLeagueMatch = parseUstaText(raw);
+    area.innerHTML = renderLeagueMatchCard(_parsedLeagueMatch, true);
+  } catch(e) {
+    _parsedLeagueMatch = null;
+    area.innerHTML = '<div style="color:#c0392b;font-size:13px;padding:12px;background:#fdf2f2;border-radius:6px;margin-top:12px">Parse error: '+esc(e.message)+'</div>';
+  }
+}
+
+async function deleteLeagueMatch(idx) {
+  if (!currentUser || !appData) return;
+  if (!confirm('Delete this imported match scorecard?')) return;
+  appData.leagueMatches.splice(idx, 1);
+  await persistData();
+  renderScoutBody();
+}
+
+async function saveLeagueMatch() {
+  if (!_parsedLeagueMatch || !currentUser) return;
+  if (!appData.leagueMatches) appData.leagueMatches = [];
+  var dup = appData.leagueMatches.find(function(m){
+    return m.homeTeam===_parsedLeagueMatch.homeTeam && m.awayTeam===_parsedLeagueMatch.awayTeam && m.matchDate===_parsedLeagueMatch.matchDate;
+  });
+  if (dup) {
+    if (!confirm('A match with these teams and date already exists. Replace it?')) return;
+    appData.leagueMatches.splice(appData.leagueMatches.indexOf(dup), 1);
+  }
+  appData.leagueMatches.unshift(_parsedLeagueMatch);
+  await persistData();
+  showToast('Match saved!');
+  _parsedLeagueMatch = null;
+  var ta = document.getElementById('usta-import-text');
+  if (ta) ta.value = '';
+  var pa = document.getElementById('import-preview-area');
+  if (pa) pa.innerHTML = '';
+  document.getElementById('import-match-panel').style.display = 'none';
 }
 
 // ══════════════════════════════════════
