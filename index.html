@@ -1006,6 +1006,78 @@
   .invite-status-badge.pending  { background: rgba(245,166,35,0.15); color: var(--warning); }
   .invite-status-badge.joined   { background: rgba(0,200,150,0.15);  color: var(--success); }
 
+  /* ── SCOUTING MODAL ── */
+  .scout-overlay {
+    position: fixed; inset: 0; background: rgba(10,25,15,0.55);
+    z-index: 2000; display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .scout-modal {
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border-accent);
+    width: min(700px, 100%); max-height: 88vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 16px 60px rgba(10,25,15,0.2);
+    position: relative;
+  }
+  .scout-header {
+    padding: 20px 48px 0 24px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .scout-title { font-family: var(--font-heading,sans-serif); font-size: 18px; font-weight: 700; color: var(--text); }
+  .scout-subtitle { font-size: 12px; color: var(--text-dim); margin-top: 2px; margin-bottom: 14px; }
+  .scout-tabs { display: flex; gap: 0; margin-top: 12px; }
+  .scout-tab {
+    font-size: 12px; padding: 8px 18px; cursor: pointer;
+    border-bottom: 2px solid transparent; color: var(--text-muted);
+    background: none; border-top: none; border-left: none; border-right: none;
+    font-family: var(--font-sans,sans-serif); transition: all 0.15s; letter-spacing: .03em;
+  }
+  .scout-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+  .scout-tab:hover:not(.active) { color: var(--text); }
+  .scout-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  .scout-close {
+    position: absolute; top: 16px; right: 18px;
+    background: none; border: none; cursor: pointer;
+    font-size: 18px; color: var(--text-dim); line-height: 1; padding: 4px 6px;
+    border-radius: 6px;
+  }
+  .scout-close:hover { color: var(--text); background: var(--surface2); }
+  .scout-player-header {
+    display: grid; grid-template-columns: 1fr 56px 1.4fr 28px;
+    gap: 10px; padding: 0 0 8px;
+    font-size: 11px; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--text-dim);
+    border-bottom: 2px solid var(--border-accent); margin-bottom: 4px;
+  }
+  .scout-player-row {
+    display: grid; grid-template-columns: 1fr 56px 1.4fr 28px;
+    gap: 10px; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .scout-player-row:last-child { border-bottom: none; }
+  .scout-note-input {
+    width: 100%; padding: 5px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface2);
+    font-size: 12px; color: var(--text); font-family: var(--font-sans,sans-serif);
+    resize: none; line-height: 1.4;
+  }
+  .scout-note-input:focus { outline: none; border-color: var(--border-accent); }
+  .scout-score-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .scout-score-row:last-child { border-bottom: none; }
+  .scout-add-row { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; align-items: flex-end; }
+  .scout-team-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--accent); font-weight: 600;
+    font-family: var(--font-sans,sans-serif);
+    text-decoration: underline; text-underline-offset: 3px;
+    padding: 0; text-align: left;
+  }
+  .scout-team-btn:hover { color: var(--teal); }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 600px) {
     .main { padding: 20px 16px; }
@@ -1497,6 +1569,23 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- ══════════ SCOUTING MODAL ══════════ -->
+<div id="scout-overlay" class="scout-overlay" style="display:none" onclick="if(event.target===this)closeScoutingModal()">
+  <div class="scout-modal">
+    <button class="scout-close" onclick="closeScoutingModal()">✕</button>
+    <div class="scout-header">
+      <div class="scout-title" id="scout-team-name"></div>
+      <div class="scout-subtitle" id="scout-team-capt"></div>
+      <div class="scout-tabs">
+        <button class="scout-tab active" id="scout-tab-roster" onclick="switchScoutTab('roster')">Roster</button>
+        <button class="scout-tab"        id="scout-tab-scores" onclick="switchScoutTab('scores')">Recent Scores</button>
+        <button class="scout-tab"        id="scout-tab-notes"  onclick="switchScoutTab('notes')">Team Notes</button>
+      </div>
+    </div>
+    <div class="scout-body" id="scout-body"></div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════
 // STORAGE KEY
@@ -1612,6 +1701,109 @@ function mergeDefaults(data) {
   if (!data.matchHistory)     data.matchHistory = [];
   if (!data.practiceSessions) data.practiceSessions = [];
   if (!data.rosterPrefs)      data.rosterPrefs = {};
+  if (!data.opponents)        data.opponents = {};
+  if (!data.opponents['Wilco Warriors']) {
+    data.opponents['Wilco Warriors'] = {
+      roster: [
+        {name:'Brian Winans',   ntrp:4.0, watchOut:''},
+        {name:'Jereme Gooch',   ntrp:4.0, watchOut:''},
+        {name:'Brandon Zinn',   ntrp:4.0, watchOut:''},
+        {name:'Kevin Pimm',     ntrp:4.0, watchOut:''},
+        {name:'Changsu Lee',    ntrp:4.0, watchOut:''},
+        {name:'Nhan Pham',      ntrp:4.0, watchOut:''},
+        {name:'John Ratcliff',  ntrp:4.0, watchOut:''},
+        {name:'Larry Michel',   ntrp:4.0, watchOut:''},
+        {name:'Cuong Duong',    ntrp:4.0, watchOut:''},
+        {name:'Brett Laine',    ntrp:4.0, watchOut:''},
+        {name:'Carlos Muniz',   ntrp:4.0, watchOut:''},
+        {name:'Trent Cottom',   ntrp:4.0, watchOut:''},
+        {name:'Nhan Tran',      ntrp:4.0, watchOut:''},
+        {name:'Hugh Landes',    ntrp:4.0, watchOut:''},
+        {name:'Jared Hopper',   ntrp:4.0, watchOut:''},
+        {name:'Harry Tran',     ntrp:4.0, watchOut:''}
+      ],
+      recentScores: [],
+      teamNotes: ''
+    };
+  }
+  if (!data.opponents['Serves You Right']) {
+    data.opponents['Serves You Right'] = {
+      roster: [
+        {name:'Tom Thornton',            ntrp:4.0, watchOut:''},
+        {name:'Alex Ran',                ntrp:4.0, watchOut:''},
+        {name:'William Herridge',        ntrp:3.5, watchOut:''},
+        {name:'Mark Weber',              ntrp:3.5, watchOut:''},
+        {name:'Aslesh Kumar Thukaram',   ntrp:4.0, watchOut:''},
+        {name:'Gary Smithee',            ntrp:4.0, watchOut:''},
+        {name:'Vince Rodriguez',         ntrp:4.0, watchOut:''},
+        {name:'Chris Reese',             ntrp:4.0, watchOut:''},
+        {name:'Kyle Rodriguez',          ntrp:3.5, watchOut:''},
+        {name:'Rui Deng',                ntrp:4.0, watchOut:''},
+        {name:'Hassan Ali',              ntrp:4.0, watchOut:''},
+        {name:'James Wahrer',            ntrp:4.0, watchOut:''},
+        {name:'Donghua Cao',             ntrp:4.0, watchOut:''},
+        {name:'Bin Hu',                  ntrp:3.5, watchOut:''},
+        {name:'Tim Maranto',             ntrp:4.0, watchOut:''},
+        {name:'Hui Zhang',               ntrp:4.0, watchOut:''},
+        {name:'Mayuresh Gogate',         ntrp:4.0, watchOut:''},
+        {name:'Michael Davis',           ntrp:4.0, watchOut:''}
+      ],
+      recentScores: [],
+      teamNotes: ''
+    };
+  }
+  if (!data.opponents['Balcones Breakers']) {
+    data.opponents['Balcones Breakers'] = {
+      roster: [
+        {name:'Jonathan Murata',   ntrp:3.5, watchOut:''},
+        {name:'Charles Alpert',    ntrp:3.5, watchOut:''},
+        {name:'John Durham',       ntrp:4.0, watchOut:''},
+        {name:'Tushar Patel',      ntrp:3.5, watchOut:''},
+        {name:'Dean Martelli',     ntrp:4.0, watchOut:''},
+        {name:'Casey Bell',        ntrp:4.0, watchOut:''},
+        {name:'Saurabh Guleria',   ntrp:4.0, watchOut:''},
+        {name:'Jayson Ryckman',    ntrp:4.0, watchOut:''},
+        {name:'Rohit Jha',         ntrp:4.0, watchOut:''},
+        {name:'Tommy Connell',     ntrp:4.0, watchOut:''},
+        {name:'Michael Endl',      ntrp:4.0, watchOut:''},
+        {name:'Michael Polishook', ntrp:4.0, watchOut:''},
+        {name:'Kelly Gallagher',   ntrp:3.5, watchOut:''},
+        {name:'Robert Grimes',     ntrp:3.5, watchOut:''},
+        {name:'Ignacio Canfran',   ntrp:3.5, watchOut:''},
+        {name:'Ty Lav',            ntrp:4.0, watchOut:''},
+        {name:'Mike Betron',       ntrp:3.5, watchOut:''},
+        {name:'Rajesh Kashyap',    ntrp:4.0, watchOut:''},
+        {name:'Pasu Raja',         ntrp:4.0, watchOut:''}
+      ],
+      recentScores: [],
+      teamNotes: ''
+    };
+  }
+  if (!data.opponents['SKO Great Hills']) {
+    data.opponents['SKO Great Hills'] = {
+      roster: [
+        {name:'Jacob Plotkin',    ntrp:4.0, watchOut:''},
+        {name:'Chris Castellani', ntrp:4.0, watchOut:''},
+        {name:'Brad Nielsen',     ntrp:4.0, watchOut:''},
+        {name:'Steve Paterson',   ntrp:4.0, watchOut:''},
+        {name:'Jason Bagshaw',    ntrp:4.0, watchOut:''},
+        {name:'Andrew Shih',      ntrp:4.0, watchOut:''},
+        {name:'Jahangir Khan',    ntrp:4.0, watchOut:''},
+        {name:'David Burton',     ntrp:4.0, watchOut:''},
+        {name:'Jesper Marklund',  ntrp:4.0, watchOut:''},
+        {name:'Jon Simon',        ntrp:4.0, watchOut:''},
+        {name:'Todd Ziaja',       ntrp:4.0, watchOut:''},
+        {name:'Keith OBrien',     ntrp:4.0, watchOut:''},
+        {name:'Erik Day',         ntrp:4.0, watchOut:''},
+        {name:'Todd Kurio',       ntrp:4.0, watchOut:''},
+        {name:'Chris Chase',      ntrp:4.0, watchOut:''},
+        {name:'Philip Lehr',      ntrp:4.0, watchOut:''},
+        {name:'Cole Nielsen',     ntrp:4.0, watchOut:''}
+      ],
+      recentScores: [],
+      teamNotes: ''
+    };
+  }
   return data;
 }
 
@@ -3115,7 +3307,7 @@ function renderSchedule(containerId, showMatchHistory) {
         '<div class="schedule-teams">' +
           (m.isBye
             ? '<span class="schedule-team bye-label">Bye week — no match</span>'
-            : '<span class="schedule-team us">Baseline Authority</span><span class="schedule-vs">vs</span><div><div class="schedule-team them">'+opponent+'</div><div style="font-size:11px;color:var(--text-dim)">Capt: '+oppCapt+'</div></div>'
+            : '<span class="schedule-team us">Baseline Authority</span><span class="schedule-vs">vs</span><div><button class="scout-team-btn schedule-team" onclick="openScoutingModal(\''+opponent+'\')">'+opponent+'</button><div style="font-size:11px;color:var(--text-dim)">Capt: '+oppCapt+' · <span style="color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px" onclick="openScoutingModal(\''+opponent+'\')">View scouting report</span></div></div>'
           ) +
         '</div>' +
         (m.venue&&m.venue!=='N/A' ? '<div class="schedule-venue">📍 '+m.venue+'</div>' : '') +
@@ -3123,6 +3315,186 @@ function renderSchedule(containerId, showMatchHistory) {
     '</div>';
   });
   container.innerHTML = html;
+}
+
+// ══════════════════════════════════════
+// OPPONENT SCOUTING
+// ══════════════════════════════════════
+let _scoutTeam = null;
+let _scoutTab  = 'roster';
+
+function openScoutingModal(teamName) {
+  _scoutTeam = teamName;
+  _scoutTab  = 'roster';
+  const m = MATCH_SCHEDULE.find(s => s.home === teamName || s.away === teamName);
+  const capt = m ? (m.home === teamName ? m.homeCapt : m.awayCapt) : '';
+  document.getElementById('scout-team-name').textContent = teamName + ' — Scouting Report';
+  document.getElementById('scout-team-capt').textContent = capt ? 'Captain: ' + capt : '';
+  document.getElementById('scout-overlay').style.display = 'flex';
+  switchScoutTab('roster');
+}
+
+function closeScoutingModal() {
+  document.getElementById('scout-overlay').style.display = 'none';
+  _scoutTeam = null;
+}
+
+function switchScoutTab(tab) {
+  _scoutTab = tab;
+  ['roster','scores','notes'].forEach(function(t) {
+    const btn = document.getElementById('scout-tab-' + t);
+    if (btn) btn.className = 'scout-tab' + (t === tab ? ' active' : '');
+  });
+  renderScoutBody();
+}
+
+function renderScoutBody() {
+  const body = document.getElementById('scout-body');
+  if (!body || !_scoutTeam || !appData) return;
+  if (!appData.opponents) appData.opponents = {};
+  if (!appData.opponents[_scoutTeam]) appData.opponents[_scoutTeam] = { roster:[], recentScores:[], teamNotes:'' };
+  const opp        = appData.opponents[_scoutTeam];
+  const isCaptain  = !!currentUser;
+  const isLoggedIn = isCaptain || !!currentPlayerUser;
+
+  if (_scoutTab === 'roster') {
+    let html = '';
+    if (opp.roster && opp.roster.length) {
+      html += '<div class="scout-player-header"><span>Player</span><span style="text-align:center">NTRP</span><span>Watch Out / Notes</span><span></span></div>';
+      html += opp.roster.map(function(p, i) {
+        return '<div class="scout-player-row">' +
+          '<span style="font-weight:500">' + p.name + '</span>' +
+          '<span style="text-align:center;color:var(--text-muted)">' + (p.ntrp||4.0) + '</span>' +
+          (isLoggedIn
+            ? '<textarea class="scout-note-input" rows="1" placeholder="Strengths, tendencies, watch out for..." ' +
+                'onblur="saveScoutPlayerNote(' + i + ',this.value)" ' +
+                'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();this.blur()}">' + (p.watchOut||'') + '</textarea>'
+            : '<span style="font-size:12px;color:var(--text-muted)">' + (p.watchOut||'—') + '</span>'
+          ) +
+          (isCaptain
+            ? '<button onclick="deleteScoutPlayer(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:15px;padding:2px 4px" title="Remove">✕</button>'
+            : '<span></span>'
+          ) +
+        '</div>';
+      }).join('');
+    } else {
+      html += '<div style="color:var(--text-dim);font-size:13px;padding:16px 0">No roster added yet.</div>';
+    }
+    if (isCaptain) {
+      html += '<div class="scout-add-row">' +
+        '<input class="form-input" id="scout-new-name" placeholder="Player name" style="flex:1;min-width:140px;margin:0" />' +
+        '<input class="form-input" id="scout-new-ntrp" placeholder="NTRP" style="width:70px;margin:0" value="4.0" />' +
+        '<button class="btn-primary" style="padding:8px 16px;font-size:13px" onclick="addScoutPlayer()">+ Add Player</button>' +
+      '</div>';
+    }
+    body.innerHTML = html;
+
+  } else if (_scoutTab === 'scores') {
+    let html = '';
+    if (opp.recentScores && opp.recentScores.length) {
+      html += opp.recentScores.map(function(s, i) {
+        return '<div class="scout-score-row">' +
+          '<span style="font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-dim);min-width:92px">' + s.date + '</span>' +
+          '<span style="flex:1;font-size:13px">vs ' + s.opponent + '</span>' +
+          '<span style="font-family:var(--font-mono,monospace);font-size:13px;font-weight:500">' + s.score + '</span>' +
+          '<span class="schedule-result-chip ' + (s.result==='W'?'win':'loss') + '" style="margin-left:6px">' + s.result + '</span>' +
+          (isCaptain
+            ? '<button onclick="deleteScoutScore(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--text-dim);font-size:15px;padding:2px 6px" title="Remove">✕</button>'
+            : ''
+          ) +
+        '</div>';
+      }).join('');
+    } else {
+      html += '<div style="color:var(--text-dim);font-size:13px;padding:16px 0">No scores recorded yet.</div>';
+    }
+    if (isCaptain) {
+      html += '<div class="scout-add-row">' +
+        '<input class="form-input" id="scout-sc-date" type="date" style="margin:0;flex:0 0 136px" />' +
+        '<input class="form-input" id="scout-sc-opp" placeholder="vs opponent" style="flex:1;min-width:110px;margin:0" />' +
+        '<input class="form-input" id="scout-sc-score" placeholder="e.g. 4-1" style="width:80px;margin:0" />' +
+        '<select class="form-input" id="scout-sc-result" style="width:64px;margin:0"><option value="W">W</option><option value="L">L</option></select>' +
+        '<button class="btn-primary" style="padding:8px 16px;font-size:13px" onclick="addScoutScore()">+ Add</button>' +
+      '</div>';
+    }
+    body.innerHTML = html;
+
+  } else {
+    const notes = opp.teamNotes || '';
+    let html = '';
+    if (isLoggedIn) {
+      html += '<div style="margin-bottom:10px;font-size:12px;color:var(--text-muted)">General team notes — visible to all logged-in players</div>' +
+        '<textarea class="scout-note-input" id="scout-team-notes-input" rows="7" placeholder="Team tendencies, playing style, what to watch out for..." style="width:100%">' + notes + '</textarea>' +
+        '<div style="margin-top:12px;display:flex;justify-content:flex-end">' +
+          '<button class="btn-primary" style="padding:8px 20px;font-size:13px" onclick="saveScoutTeamNotes()">Save Notes</button>' +
+        '</div>';
+    } else {
+      html += '<div style="font-size:13px;color:var(--text-muted);white-space:pre-wrap">' + (notes || 'No team notes yet.') + '</div>';
+    }
+    body.innerHTML = html;
+  }
+}
+
+async function saveScoutPlayerNote(idx, value) {
+  if (!appData || !_scoutTeam) return;
+  if (!appData.opponents) appData.opponents = {};
+  if (!appData.opponents[_scoutTeam]) appData.opponents[_scoutTeam] = { roster:[], recentScores:[], teamNotes:'' };
+  if (appData.opponents[_scoutTeam].roster[idx] !== undefined) {
+    appData.opponents[_scoutTeam].roster[idx].watchOut = value;
+    await persistData();
+    showToast('Note saved.');
+  }
+}
+
+async function deleteScoutPlayer(idx) {
+  if (!appData || !_scoutTeam || !currentUser) return;
+  appData.opponents[_scoutTeam].roster.splice(idx, 1);
+  await persistData();
+  renderScoutBody();
+}
+
+async function addScoutPlayer() {
+  if (!currentUser || !_scoutTeam) return;
+  const nameEl = document.getElementById('scout-new-name');
+  const ntrpEl = document.getElementById('scout-new-ntrp');
+  const name = nameEl ? nameEl.value.trim() : '';
+  const ntrp = parseFloat(ntrpEl ? ntrpEl.value : '4.0') || 4.0;
+  if (!name) { showToast('Enter a player name.', true); return; }
+  appData.opponents[_scoutTeam].roster.push({ name:name, ntrp:ntrp, watchOut:'' });
+  await persistData();
+  renderScoutBody();
+}
+
+async function addScoutScore() {
+  if (!currentUser || !_scoutTeam) return;
+  const dateEl   = document.getElementById('scout-sc-date');
+  const oppEl    = document.getElementById('scout-sc-opp');
+  const scoreEl  = document.getElementById('scout-sc-score');
+  const resultEl = document.getElementById('scout-sc-result');
+  const date   = dateEl   ? dateEl.value              : '';
+  const opp    = oppEl    ? oppEl.value.trim()         : '';
+  const score  = scoreEl  ? scoreEl.value.trim()       : '';
+  const result = resultEl ? resultEl.value             : 'W';
+  if (!date || !opp || !score) { showToast('Fill in date, opponent, and score.', true); return; }
+  appData.opponents[_scoutTeam].recentScores.unshift({ date:date, opponent:opp, score:score, result:result });
+  await persistData();
+  renderScoutBody();
+}
+
+async function deleteScoutScore(idx) {
+  if (!currentUser || !_scoutTeam) return;
+  appData.opponents[_scoutTeam].recentScores.splice(idx, 1);
+  await persistData();
+  renderScoutBody();
+}
+
+async function saveScoutTeamNotes() {
+  if (!appData || !_scoutTeam) return;
+  const el = document.getElementById('scout-team-notes-input');
+  if (!el) return;
+  if (!appData.opponents[_scoutTeam]) appData.opponents[_scoutTeam] = { roster:[], recentScores:[], teamNotes:'' };
+  appData.opponents[_scoutTeam].teamNotes = el.value;
+  await persistData();
+  showToast('Team notes saved.');
 }
 
 // ══════════════════════════════════════
