@@ -2086,23 +2086,78 @@ function renderScorecard(m, idx) {
 
 function renderScores() {
   const container = document.getElementById('scores-body');
-  const all = (appData.matchHistory || []);
 
-  const wins   = all.filter(m => m.result === 'win').length;
-  const losses = all.filter(m => m.result === 'loss').length;
-  document.getElementById('stat-wins').textContent    = wins;
-  document.getElementById('stat-losses').textContent  = losses;
-  document.getElementById('stat-rate').textContent    = all.length ? Math.round(wins/all.length*100) + '%' : '—';
+  // Compute W/L from imported USTA league matches involving Baseline Authority
+  const leagueMatches = (appData.leagueMatches || []).filter(function(m) {
+    return m.homeTeam === 'Baseline Authority' || m.awayTeam === 'Baseline Authority';
+  });
+
+  var wins = 0, losses = 0;
+  leagueMatches.forEach(function(m) {
+    var weAreHome = m.homeTeam === 'Baseline Authority';
+    var ourWins   = weAreHome ? m.homeWins : m.awayWins;
+    var theirWins = weAreHome ? m.awayWins : m.homeWins;
+    if (ourWins > theirWins) wins++; else losses++;
+  });
+
+  const total = leagueMatches.length;
+  document.getElementById('stat-wins').textContent    = total ? wins    : '—';
+  document.getElementById('stat-losses').textContent  = total ? losses  : '—';
+  document.getElementById('stat-rate').textContent    = total ? Math.round(wins / total * 100) + '%' : '—';
   document.getElementById('stat-sessions').textContent = (appData.practiceSessions || []).length;
 
-  if (!all.length) {
+  if (!total) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div><div class="empty-sub">Use "Import USTA Match" in the Schedule tab to add results</div></div>';
     return;
   }
 
-  // Sort newest first
-  const sorted = [...all].reverse();
-  container.innerHTML = sorted.map((m, i) => renderScorecard(m, all.length - 1 - i)).join('');
+  // Sort newest first by date
+  const sorted = leagueMatches.slice().sort(function(a, b) {
+    return (b.matchDate || '').localeCompare(a.matchDate || '');
+  });
+
+  container.innerHTML = sorted.map(function(match) {
+    var weAreHome = match.homeTeam === 'Baseline Authority';
+    var ourWins   = weAreHome ? match.homeWins : match.awayWins;
+    var theirWins = weAreHome ? match.awayWins : match.homeWins;
+    var won       = ourWins > theirWins;
+    var opponent  = weAreHome ? match.awayTeam : match.homeTeam;
+
+    // Build card with BA-perspective header
+    var card = '<div class="match-preview" style="margin-bottom:16px">';
+    card += '<div class="match-preview-header">';
+    card += '<div>';
+    card += '<div style="font-weight:600;font-size:14px">vs ' + esc(opponent) + '</div>';
+    card += '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + (match.matchDate || '') +
+            ' · <span class="schedule-ha-badge ' + (weAreHome ? 'home' : 'away') + '" style="font-size:10px;padding:2px 7px">' + (weAreHome ? 'HOME' : 'AWAY') + '</span></div>';
+    card += '</div>';
+    card += '<div style="display:flex;align-items:center;gap:10px">';
+    card += '<span style="font-family:var(--font-mono,monospace);font-size:20px;font-weight:700">' +
+            '<span style="color:var(--accent)">' + ourWins + '</span>' +
+            '<span style="color:var(--text-dim);font-size:14px"> – </span>' +
+            '<span style="color:var(--text-muted)">' + theirWins + '</span></span>';
+    card += '<span class="schedule-result-chip ' + (won ? 'win' : 'loss') + '">' + (won ? 'W' : 'L') + '</span>';
+    card += '</div>';
+    card += '</div>';
+
+    // Line-by-line detail
+    card += '<div class="preview-line-hdr"><span>Line</span><span>' + esc(match.homeTeam) + '</span><span>' + esc(match.awayTeam) + '</span><span>Sets</span></div>';
+    (match.lines || []).forEach(function(line) {
+      var label   = line.lineNum + (line.type === 'Singles' ? 'S' : 'D');
+      var homeStr = (line.homePlayers || []).join(' / ');
+      var awayStr = (line.awayPlayers || []).join(' / ');
+      var setsStr = (line.sets || []).map(function(s) { return s.home + '-' + s.away; }).join(' ');
+      var hw      = line.winner === 'home';
+      card += '<div class="preview-line-grid">';
+      card += '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--text-dim)">' + label + '</span>';
+      card += '<span style="font-weight:' + (hw ? '600' : '400') + ';color:' + (hw ? 'var(--text)' : 'var(--text-muted)') + '">' + esc(homeStr) + (hw ? ' <span style="color:var(--success);font-size:11px;font-weight:700">W</span>' : '') + '</span>';
+      card += '<span style="font-weight:' + (!hw ? '600' : '400') + ';color:' + (!hw ? 'var(--text)' : 'var(--text-muted)') + '">' + esc(awayStr) + (!hw ? ' <span style="color:var(--success);font-size:11px;font-weight:700">W</span>' : '') + '</span>';
+      card += '<span style="font-family:var(--font-mono,monospace);font-size:12px">' + esc(setsStr) + '</span>';
+      card += '</div>';
+    });
+    card += '</div>';
+    return card;
+  }).join('');
 }
 
 // ── Delete match results ──
@@ -3437,32 +3492,55 @@ function renderSchedule(containerId, showMatchHistory) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const today = new Date().toISOString().slice(0,10);
-  const matchHistory = (appData && appData.matchHistory) || [];
   const nextMatch = MATCH_SCHEDULE.find(m => !m.isBye && m.date >= today);
-  const wins   = matchHistory.filter(m=>m.result==='win').length;
-  const losses = matchHistory.filter(m=>m.result==='loss').length;
+
+  // Build W/L lookup from leagueMatches (BA matches keyed by date)
+  const leagueMatches = (appData && appData.leagueMatches) || [];
+  const leagueByDate  = {};
+  leagueMatches.forEach(function(lm) {
+    if (lm.homeTeam === 'Baseline Authority' || lm.awayTeam === 'Baseline Authority') {
+      leagueByDate[lm.matchDate] = lm;
+    }
+  });
+  const baMatches = Object.values(leagueByDate);
+  var wins = 0, losses = 0;
+  baMatches.forEach(function(lm) {
+    var weAreHome = lm.homeTeam === 'Baseline Authority';
+    var ourW = weAreHome ? lm.homeWins : lm.awayWins;
+    var theirW = weAreHome ? lm.awayWins : lm.homeWins;
+    if (ourW > theirW) wins++; else losses++;
+  });
+
   let html = '';
-  if (showMatchHistory && matchHistory.length > 0) {
+  if (showMatchHistory && baMatches.length > 0) {
     html += '<div style="display:flex;gap:16px;align-items:center;margin-bottom:20px;padding:12px 16px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">' +
       '<span style="font-size:12px;color:var(--text-muted)">Season record</span>' +
       '<span style="font-family:var(--font-mono,monospace);font-size:18px;font-weight:600;color:var(--text)">' + wins + '<span style="color:var(--text-dim);font-size:13px">W</span> – ' + losses + '<span style="color:var(--text-dim);font-size:13px">L</span></span>' +
     '</div>';
   }
+
   MATCH_SCHEDULE.forEach(m => {
-    const isPast  = m.date < today;
-    const isNext  = !m.isBye && nextMatch && m.date === nextMatch.date;
-    const isHome  = m.home === 'Baseline Authority';
+    const isPast   = m.date < today;
+    const isNext   = !m.isBye && nextMatch && m.date === nextMatch.date;
+    const isHome   = m.home === 'Baseline Authority';
     const opponent = isHome ? m.away : m.home;
     const oppCapt  = isHome ? m.awayCapt : m.homeCapt;
-    const result   = matchHistory.find(mh => mh.date === m.date);
-    let cardClass  = 'schedule-card' + (m.isBye?' bye':isHome?' home':' away') + (isPast?' past':'');
-    let haBadge = m.isBye
+    const lm       = leagueByDate[m.date];
+    let resultChip = '';
+    if (lm) {
+      var weAreHome = lm.homeTeam === 'Baseline Authority';
+      var ourW  = weAreHome ? lm.homeWins : lm.awayWins;
+      var theirW = weAreHome ? lm.awayWins : lm.homeWins;
+      var won   = ourW > theirW;
+      resultChip = '<span class="schedule-result-chip ' + (won?'win':'loss') + '">' + (won?'W':'L') + ' ' + ourW + '–' + theirW + '</span>';
+    } else if (!isPast && !m.isBye) {
+      resultChip = '<span class="schedule-result-chip upcoming">Upcoming</span>';
+    }
+    let cardClass = 'schedule-card' + (m.isBye?' bye':isHome?' home':' away') + (isPast?' past':'');
+    let haBadge   = m.isBye
       ? '<span class="schedule-ha-badge bye">BYE</span>'
       : '<span class="schedule-ha-badge '+(isHome?'home':'away')+'">'+(isHome?'HOME':'AWAY')+'</span>';
     const nextBadge = isNext ? '<span class="schedule-next-badge">NEXT MATCH</span>' : '';
-    let resultChip = result
-      ? '<span class="schedule-result-chip '+result.result+'">'+(result.result==='win'?'W':'L')+'</span>'
-      : (!isPast && !m.isBye ? '<span class="schedule-result-chip upcoming">Upcoming</span>' : '');
     html += '<div class="'+cardClass+'">' +
       '<div class="schedule-header">' +
         '<div class="schedule-meta"><span class="schedule-date">'+m.date+'</span><span class="schedule-time">'+m.time+'</span>'+haBadge+nextBadge+resultChip+'</div>' +
