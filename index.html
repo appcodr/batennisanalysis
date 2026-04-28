@@ -1163,7 +1163,6 @@
           <div class="section-title">Season Scores</div>
           <div class="section-subtitle">USTA Spring Adult 18+ WeekEND · 2026</div>
         </div>
-        <button class="btn-primary" onclick="openAddMatchModal()">+ Add Match</button>
       </div>
 
       <div class="stats-grid">
@@ -1233,44 +1232,6 @@ Away Player 1 / Away Player 2
         <div id="import-preview-area"></div>
       </div>
 
-      <!-- Add Match Modal -->
-      <div id="add-match-modal" style="display:none;margin-top:16px">
-        <div class="form-card" style="border:1px solid rgba(0,180,216,0.3)">
-          <div style="font-family:var(--font-sans,sans-serif);font-size:13px;font-weight:500;color:var(--teal);margin-bottom:20px;letter-spacing:.05em">NEW MATCH RESULT</div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">Date</label>
-              <input class="form-input" type="date" id="match-date" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Line</label>
-              <select class="form-select" id="match-line">
-                <option value="Singles 1">Singles — Line 1</option>
-                <option value="Singles 2">Singles — Line 2</option>
-                <option value="Doubles 1">Doubles — Line 1</option>
-                <option value="Doubles 2">Doubles — Line 2</option>
-                <option value="Doubles 3">Doubles — Line 3</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Our Player(s)</label>
-              <input class="form-input" id="match-players" placeholder="e.g. Elan / Elan &amp; Rohith" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Opponent(s)</label>
-              <input class="form-input" id="match-opponent" placeholder="e.g. Smith / Smith &amp; Jones" />
-            </div>
-            <div class="form-group full">
-              <label class="form-label">Score — enter each set separated by comma (e.g. 6-3, 7-5 or 4-6, 6-3, 10-7)</label>
-              <input class="form-input" id="match-score" placeholder="6-3, 7-5" />
-            </div>
-          </div>
-          <div class="btn-row">
-            <button class="btn-primary" onclick="saveMatchResult()">Save Match →</button>
-            <button class="btn-secondary" onclick="document.getElementById('add-match-modal').style.display='none'">Cancel</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ── ROSTER TAB ── -->
@@ -2135,7 +2096,7 @@ function renderScores() {
   document.getElementById('stat-sessions').textContent = (appData.practiceSessions || []).length;
 
   if (!all.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div><div class="empty-sub">Hit "+ Add Match" to log your first result</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🎾</div><div class="empty-title">No matches recorded yet</div><div class="empty-sub">Use "Import USTA Match" in the Schedule tab to add results</div></div>';
     return;
   }
 
@@ -2144,39 +2105,7 @@ function renderScores() {
   container.innerHTML = sorted.map((m, i) => renderScorecard(m, all.length - 1 - i)).join('');
 }
 
-// ── Add / delete match results ──
-function openAddMatchModal() {
-  const modal = document.getElementById('add-match-modal');
-  modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
-  document.getElementById('match-date').valueAsDate = new Date();
-}
-
-async function saveMatchResult() {
-  const date     = document.getElementById('match-date').value;
-  const line     = document.getElementById('match-line').value;
-  const players  = document.getElementById('match-players').value.trim();
-  const opponent = document.getElementById('match-opponent').value.trim();
-  const score    = document.getElementById('match-score').value.trim();
-  if (!date || !score) { showToast('Date and score are required.', true); return; }
-  const result = (() => {
-    const sets = parseSets(score, 'win');
-    if (!sets.length) return 'win';
-    const ourSets = sets.filter(s => s.our > s.their).length;
-    const theirSets = sets.filter(s => s.their > s.our).length;
-    return ourSets > theirSets ? 'win' : 'loss';
-  })();
-  if (!appData.matchHistory) appData.matchHistory = [];
-  appData.matchHistory.push({ date, line, players, opponent, score, result });
-  await persistData();
-  renderScores();
-  document.getElementById('add-match-modal').style.display = 'none';
-  document.getElementById('match-players').value  = '';
-  document.getElementById('match-opponent').value = '';
-  document.getElementById('match-score').value    = '';
-  renderSchedule('captain-schedule-content', true);
-  showToast('Match result saved!');
-}
-
+// ── Delete match results ──
 async function deleteMatchResult(idx) {
   if (!confirm('Delete this match result?')) return;
   appData.matchHistory.splice(idx, 1);
