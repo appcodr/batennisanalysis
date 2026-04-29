@@ -1493,6 +1493,7 @@ Away Player 1 / Away Player 2
     <button class="nav-tab" onclick="switchPlayerTab('practice-avail')">Practice Availability</button>
     <button class="nav-tab" onclick="switchPlayerTab('my-lines')">My Lines</button>
     <button class="nav-tab" onclick="switchPlayerTab('schedule')">Schedule</button>
+    <button class="nav-tab" onclick="switchPlayerTab('my-scores')">My Scores</button>
   </div>
 
   <div class="main">
@@ -1561,6 +1562,17 @@ Away Player 1 / Away Player 2
         </div>
       </div>
       <div id="player-schedule-content"></div>
+    </div>
+
+    <!-- ── MY SCORES ── -->
+    <div class="tab-panel" id="player-panel-my-scores">
+      <div class="section-header">
+        <div>
+          <div class="section-title">My Scores</div>
+          <div class="section-subtitle">Your season league results &amp; practice match history</div>
+        </div>
+      </div>
+      <div id="my-scores-content"></div>
     </div>
 
   </div>
@@ -2799,6 +2811,55 @@ async function refreshAnalysis() {
     });
   });
 
+  // ── Collect W/L per player from USTA league matches ──
+  // Resolves player names against ROSTER (exact, then last-name, then first-name)
+  const leagueSinglesStats = {};
+  const leagueDoublesStats = {};
+  function resolveRosterName(rawName) {
+    const n = (rawName||'').trim();
+    if (!n) return null;
+    const exact = ROSTER.find(r => r.name === n);
+    if (exact) return exact.name;
+    const last = n.split(' ').pop().toLowerCase();
+    const byLast = ROSTER.find(r => r.name.split(' ').pop().toLowerCase() === last);
+    if (byLast) return byLast.name;
+    const first = n.split(' ')[0].toLowerCase();
+    const byFirst = ROSTER.find(r => r.name.split(' ')[0].toLowerCase() === first);
+    return byFirst ? byFirst.name : null;
+  }
+  (appData.leagueMatches || []).forEach(function(match) {
+    const baIsHome = match.homeTeam === 'Baseline Authority';
+    const baIsAway = match.awayTeam === 'Baseline Authority';
+    if (!baIsHome && !baIsAway) return; // not our match
+    (match.lines || []).forEach(function(line) {
+      const baPlayers = baIsHome ? (line.homePlayers || []) : (line.awayPlayers || []);
+      const baWon = (baIsHome && line.winner === 'home') || (baIsAway && line.winner === 'away');
+      const statsMap = line.type === 'Singles' ? leagueSinglesStats : leagueDoublesStats;
+      baPlayers.forEach(function(raw) {
+        const name = resolveRosterName(raw);
+        if (!name) return;
+        if (!statsMap[name]) statsMap[name] = { wins:0, losses:0 };
+        if (baWon) statsMap[name].wins++; else statsMap[name].losses++;
+      });
+    });
+  });
+
+  // Merge league stats into practice stats (league weighted ×2 — real USTA matches matter more)
+  ROSTER.forEach(function(p) {
+    const ls = leagueSinglesStats[p.name];
+    if (ls) {
+      if (!singlesStats[p.name]) singlesStats[p.name] = { wins:0, losses:0 };
+      singlesStats[p.name].wins   += ls.wins   * 2;
+      singlesStats[p.name].losses += ls.losses * 2;
+    }
+    const ld = leagueDoublesStats[p.name];
+    if (ld) {
+      if (!doublesStats[p.name]) doublesStats[p.name] = { wins:0, losses:0 };
+      doublesStats[p.name].wins   += ld.wins   * 2;
+      doublesStats[p.name].losses += ld.losses * 2;
+    }
+  });
+
   // ── Score each player for singles suitability ──
   // Factors: NTRP, preference, singles W/L record
   function winRate(stat) {
@@ -2864,15 +2925,19 @@ async function refreshAnalysis() {
   curSingles.forEach(l => {
     const p = ROSTER.find(r=>r.name===l.player);
     const stat = singlesStats[l.player] || {wins:0,losses:0};
+    const lStat = leagueSinglesStats[l.player] || {wins:0,losses:0};
     const pref = prefs[l.player] || 'both';
     const wr = winRate(stat);
     const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+    const leagueLabel = (lStat.wins+lStat.losses) > 0
+      ? '<span style="font-size:10px;color:var(--teal);margin-left:6px">League '+lStat.wins+'-'+lStat.losses+'</span>' : '';
     singlesHtml +=
       '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">' +
         '<div style="font-size:12px;color:var(--text-dim);min-width:60px">Line ' + l.line + '</div>' +
         '<div style="flex:1">' +
           '<span style="font-weight:500">' + (l.player||'—') + '</span>' +
           '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">NTRP ' + (p?p.ntrp.toFixed(1):'?') + ' · ' + pref + '</span>' +
+          leagueLabel +
         '</div>' +
         '<div style="font-family:var(--font-mono,monospace);font-size:13px;color:' + wrColor + '">' +
           record(stat) + (stat.wins+stat.losses>0 ? ' ('+pct(stat)+')' : '') +
@@ -2892,6 +2957,9 @@ async function refreshAnalysis() {
     const tag = isCurrentS1 ? '← S1' : isCurrentS2 ? '← S2' : '';
     const tagColor = (isCurrentS1||isCurrentS2) ? 'var(--teal)' : 'transparent';
     const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
+    const lStat = leagueSinglesStats[p.name] || {wins:0,losses:0};
+    const leagueBadge = (lStat.wins+lStat.losses) > 0
+      ? '<span style="font-size:10px;background:rgba(0,180,216,0.12);color:var(--teal);padding:1px 6px;border-radius:4px;margin-left:6px">League '+lStat.wins+'-'+lStat.losses+'</span>' : '';
     singlesHtml +=
       '<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;margin-bottom:4px;background:' +
         ((isCurrentS1||isCurrentS2)?'rgba(0,180,216,0.06)':'var(--clay-light)') + '">' +
@@ -2899,6 +2967,7 @@ async function refreshAnalysis() {
         '<div style="flex:1">' +
           '<span style="font-weight:500">' + p.name + '</span>' +
           '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' + p.pref + ' · NTRP ' + p.ntrp.toFixed(1) + '</span>' +
+          leagueBadge +
         '</div>' +
         '<div style="font-family:var(--font-mono,monospace);font-size:12px;color:' + wrColor + '">' + record(stat) + (stat.wins+stat.losses>0?'  '+pct(stat):'') + '</div>' +
         '<div style="font-size:11px;color:' + tagColor + ';min-width:30px;text-align:right;font-weight:500">' + tag + '</div>' +
@@ -2912,11 +2981,13 @@ async function refreshAnalysis() {
   const s1Match = curSingles[0] && curSingles[0].player === recS1.name;
   const s2Match = curSingles[1] && curSingles[1].player === recS2?.name;
 
+  const hasLeagueData = Object.keys(leagueSinglesStats).length > 0;
   if (s1Match && s2Match) {
-    singlesHtml += '<div class="recommend">✓ Current singles assignments look optimal based on NTRP, preference, and practice win rates.</div>';
+    singlesHtml += '<div class="recommend">✓ Current singles assignments look optimal based on NTRP, preference, and ' + (hasLeagueData ? 'league + practice' : 'practice') + ' win rates.</div>';
   } else {
     singlesHtml += '<div class="recommend">Recommended: <strong>' + recS1.name + '</strong> on Line 1' +
-      (recS2 ? ', <strong>' + recS2.name + '</strong> on Line 2' : '') + '.</div>';
+      (recS2 ? ', <strong>' + recS2.name + '</strong> on Line 2' : '') +
+      (hasLeagueData ? ' <span style="font-size:11px;color:var(--text-dim)">(based on NTRP, preferences &amp; league results)</span>' : '') + '.</div>';
   }
 
   // ── Doubles section ──
@@ -2931,16 +3002,27 @@ async function refreshAnalysis() {
     const wrColor = wr===null ? 'var(--text-dim)' : wr>=0.6 ? 'var(--success)' : wr>=0.4 ? 'var(--warning)' : 'var(--accent)';
     const p1 = ROSTER.find(r=>r.name===l.player1);
     const p2 = ROSTER.find(r=>r.name===l.player2);
+    const ld1 = leagueDoublesStats[l.player1] || {wins:0,losses:0};
+    const ld2 = leagueDoublesStats[l.player2] || {wins:0,losses:0};
+    const leagueTot1 = ld1.wins+ld1.losses, leagueTot2 = ld2.wins+ld2.losses;
+    const leaguePart = (leagueTot1>0||leagueTot2>0)
+      ? '<span style="font-size:10px;background:rgba(0,180,216,0.12);color:var(--teal);padding:1px 6px;border-radius:4px;margin-left:8px">League: ' +
+          (l.player1||'—')+' '+(leagueTot1>0?ld1.wins+'-'+ld1.losses:'—') +
+          ' / '+(l.player2||'—')+' '+(leagueTot2>0?ld2.wins+'-'+ld2.losses:'—') +
+        '</span>' : '';
     doublesHtml +=
       '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:8px;margin-bottom:6px;border:1px solid var(--border)">' +
         '<div style="font-size:12px;color:var(--text-dim);min-width:60px">Line ' + l.line + '</div>' +
         '<div style="flex:1">' +
-          '<span style="font-weight:500">' + (l.player1||'—') + '</span>' +
-          '<span style="color:var(--text-dim);margin:0 6px">&amp;</span>' +
-          '<span style="font-weight:500">' + (l.player2||'—') + '</span>' +
-          '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' +
-            (p1?p1.ntrp.toFixed(1):'?') + ' / ' + (p2?p2.ntrp.toFixed(1):'?') +
-          '</span>' +
+          '<div>' +
+            '<span style="font-weight:500">' + (l.player1||'—') + '</span>' +
+            '<span style="color:var(--text-dim);margin:0 6px">&amp;</span>' +
+            '<span style="font-weight:500">' + (l.player2||'—') + '</span>' +
+            '<span style="font-size:11px;color:var(--text-dim);margin-left:8px">' +
+              (p1?p1.ntrp.toFixed(1):'?') + ' / ' + (p2?p2.ntrp.toFixed(1):'?') +
+            '</span>' +
+          '</div>' +
+          leaguePart +
         '</div>' +
         '<div style="font-family:var(--font-mono,monospace);font-size:13px;color:' + wrColor + '">' +
           (tot>0 ? wins+'-'+losses+' ('+Math.round((wins/tot)*100)+'%)' : 'no data') +
@@ -4496,7 +4578,7 @@ function playerLogout() {
 // PLAYER TAB SWITCHING
 // ══════════════════════════════════════
 function switchPlayerTab(id) {
-  const tabs = ['availability','practice-avail','my-lines','schedule'];
+  const tabs = ['availability','practice-avail','my-lines','schedule','my-scores'];
   document.querySelectorAll('#player-nav-tabs .nav-tab').forEach((t,i) => {
     t.classList.toggle('active', tabs[i] === id);
   });
@@ -4508,6 +4590,197 @@ function switchPlayerTab(id) {
   if (id === 'my-lines') renderMyLines();
   if (id === 'practice-avail') renderPracticeAvailGrid();
   if (id === 'schedule') renderSchedule('player-schedule-content', false);
+  if (id === 'my-scores') renderMyScores();
+}
+
+// ══════════════════════════════════════
+// MY SCORES (player view)
+// ══════════════════════════════════════
+function renderMyScores() {
+  const container = document.getElementById('my-scores-content');
+  if (!container || !currentPlayerName || !appData) return;
+
+  const pname = currentPlayerName;
+  let html = '';
+
+  // ── Season League Results ──
+  const leagueMatches = (appData.leagueMatches || []).filter(function(match) {
+    const baIsHome = match.homeTeam === 'Baseline Authority';
+    const baIsAway = match.awayTeam === 'Baseline Authority';
+    if (!baIsHome && !baIsAway) return false;
+    return (match.lines || []).some(function(line) {
+      const baPlayers = baIsHome ? (line.homePlayers || []) : (line.awayPlayers || []);
+      return baPlayers.some(function(raw) {
+        if (!raw) return false;
+        const n = raw.trim();
+        const nl = n.toLowerCase();
+        const pnl = pname.toLowerCase();
+        if (nl === pnl) return true;
+        const last = n.split(' ').pop().toLowerCase();
+        const plast = pname.split(' ').pop().toLowerCase();
+        if (last === plast) return true;
+        const first = n.split(' ')[0].toLowerCase();
+        const pfirst = pname.split(' ')[0].toLowerCase();
+        return first === pfirst;
+      });
+    });
+  });
+
+  html += '<div style="margin-bottom:24px">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px">' +
+    '<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:4px;font-size:10px">USTA</span>' +
+    'Season League Matches' +
+  '</div>';
+
+  if (!leagueMatches.length) {
+    html += '<div style="color:var(--text-dim);font-size:13px;padding:12px 0">No league matches found for you this season.</div>';
+  } else {
+    let totalW = 0, totalL = 0;
+    leagueMatches.forEach(function(match) {
+      const baIsHome = match.homeTeam === 'Baseline Authority';
+      const opponent = baIsHome ? match.awayTeam : match.homeTeam;
+      const matchDate = match.matchDate || '';
+      const baWins = baIsHome ? (match.homeWins||0) : (match.awayWins||0);
+      const oppWins = baIsHome ? (match.awayWins||0) : (match.homeWins||0);
+      const matchResult = baWins > oppWins ? 'W' : baWins < oppWins ? 'L' : 'T';
+      const matchResultColor = matchResult==='W' ? 'var(--success)' : matchResult==='L' ? 'var(--accent)' : 'var(--text-dim)';
+
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px">';
+      // Match header
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<div style="font-size:12px;color:var(--text-dim)">' + (matchDate ? new Date(matchDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Date TBD') + '</div>' +
+        '<div style="flex:1;font-size:13px;font-weight:500">vs ' + opponent + '</div>' +
+        '<div style="font-size:13px;font-weight:700;color:' + matchResultColor + '">' + matchResult + ' ' + baWins + '–' + oppWins + '</div>' +
+      '</div>';
+
+      // Player's individual lines in this match
+      (match.lines || []).forEach(function(line) {
+        const baPlayers = baIsHome ? (line.homePlayers || []) : (line.awayPlayers || []);
+        const oppPlayers = baIsHome ? (line.awayPlayers || []) : (line.homePlayers || []);
+        const isInLine = baPlayers.some(function(raw) {
+          if (!raw) return false;
+          const n = raw.trim().toLowerCase();
+          const pnl = pname.toLowerCase();
+          if (n === pnl) return true;
+          if (n.split(' ').pop() === pnl.split(' ').pop()) return true;
+          return n.split(' ')[0] === pnl.split(' ')[0];
+        });
+        if (!isInLine) return;
+
+        const baWon = (baIsHome && line.winner === 'home') || (!baIsHome && line.winner === 'away');
+        if (baWon) totalW++; else totalL++;
+        const lineResult = baWon ? 'W' : 'L';
+        const lineColor = baWon ? 'var(--success)' : 'var(--accent)';
+        const sets = (line.sets || []).map(function(s){ return s.home+'-'+s.away; }).join(', ');
+        const partner = baPlayers.filter(function(r){ return r && r.trim().toLowerCase() !== pname.toLowerCase() && r.trim().split(' ').pop().toLowerCase() !== pname.split(' ').pop().toLowerCase(); }).join(' & ');
+        const oppsStr = (oppPlayers||[]).filter(Boolean).join(' / ');
+
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;background:' + (baWon?'rgba(0,200,150,0.06)':'rgba(255,100,80,0.05)') + ';margin-bottom:4px">' +
+          '<div style="font-size:11px;color:var(--text-dim);min-width:56px">' + line.type + ' ' + line.lineNum + '</div>' +
+          '<div style="flex:1;font-size:12px">' +
+            (partner ? '<span style="color:var(--text-dim)">w/ '+partner+'</span> ' : '') +
+            (oppsStr ? '<span style="color:var(--text-dim);font-size:11px">vs '+oppsStr+'</span>' : '') +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text-dim);margin-right:8px">' + sets + '</div>' +
+          '<div style="font-weight:700;color:' + lineColor + ';font-size:13px;min-width:16px;text-align:center">' + lineResult + '</div>' +
+        '</div>';
+      });
+
+      html += '</div>';
+    });
+
+    // Summary pill
+    if (totalW+totalL > 0) {
+      const wrPct = Math.round(totalW/(totalW+totalL)*100);
+      const wrColor = wrPct>=60 ? 'var(--success)' : wrPct>=40 ? 'var(--warning)' : 'var(--accent)';
+      html = html.replace(
+        'Season League Matches' + '</div>',
+        'Season League Matches' +
+        '<span style="margin-left:auto;font-size:11px;font-weight:600;color:' + wrColor + '">' + totalW + 'W – ' + totalL + 'L (' + wrPct + '%)</span>' +
+        '</div>'
+      );
+    }
+  }
+  html += '</div>';
+
+  // ── Practice Match History ──
+  html += '<div>';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px">' +
+    '<span style="background:var(--teal);color:#fff;padding:2px 8px;border-radius:4px;font-size:10px">PRACTICE</span>' +
+    'Practice Match History' +
+  '</div>';
+
+  const practiceSessions = (appData.practiceSessions || []).slice().reverse(); // newest first
+  const myPracticeMatches = [];
+  practiceSessions.forEach(function(sess) {
+    (sess.matches || []).forEach(function(m) {
+      const allPlayers = [m.p1, m.p2, m.p3, m.p4].filter(Boolean).map(function(n){ return n.trim().toLowerCase(); });
+      const pnl = pname.toLowerCase();
+      const plast = pname.split(' ').pop().toLowerCase();
+      const isInMatch = allPlayers.some(function(n){
+        return n === pnl || n.split(' ').pop() === plast;
+      });
+      if (!isInMatch) return;
+
+      // Determine win/loss: p1+p2 vs p3+p4; winner field = 'team1' or 'team2'
+      const team1 = [m.p1, m.p2].filter(Boolean);
+      const team2 = [m.p3, m.p4].filter(Boolean);
+      const onTeam1 = team1.some(function(n){ const nl=n.trim().toLowerCase(); return nl===pnl||nl.split(' ').pop()===plast; });
+      const baWon = (onTeam1 && m.winner === 'team1') || (!onTeam1 && m.winner === 'team2');
+      const partner = (onTeam1 ? team1 : team2).filter(function(n){ const nl=n.trim().toLowerCase(); return nl!==pnl&&nl.split(' ').pop()!==plast; }).join(' & ');
+      const opponents = (onTeam1 ? team2 : team1).filter(Boolean).join(' / ');
+      const sets = m.score || '';
+      myPracticeMatches.push({ date: sess.date, baWon, partner, opponents, sets, type: team1.length+team2.length > 2 ? 'Doubles' : 'Singles' });
+    });
+  });
+
+  if (!myPracticeMatches.length) {
+    html += '<div style="color:var(--text-dim);font-size:13px;padding:12px 0">No practice match data found for you yet.</div>';
+  } else {
+    let practiceW = 0, practiceL = 0;
+    // Group by date
+    const byDate = {};
+    myPracticeMatches.forEach(function(m) {
+      const d = m.date || 'Unknown';
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(m);
+      if (m.baWon) practiceW++; else practiceL++;
+    });
+
+    // Summary
+    if (practiceW+practiceL > 0) {
+      const pPct = Math.round(practiceW/(practiceW+practiceL)*100);
+      const pColor = pPct>=60 ? 'var(--success)' : pPct>=40 ? 'var(--warning)' : 'var(--accent)';
+      html = html.replace(
+        'Practice Match History' + '</div>',
+        'Practice Match History' +
+        '<span style="margin-left:auto;font-size:11px;font-weight:600;color:' + pColor + '">' + practiceW + 'W – ' + practiceL + 'L (' + pPct + '%)</span>' +
+        '</div>'
+      );
+    }
+
+    Object.keys(byDate).sort(function(a,b){ return b.localeCompare(a); }).forEach(function(d) {
+      const dateLabel = d !== 'Unknown' ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}) : 'Unknown date';
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px">';
+      html += '<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:8px">' + dateLabel + '</div>';
+      byDate[d].forEach(function(m) {
+        const lineColor = m.baWon ? 'var(--success)' : 'var(--accent)';
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;background:' + (m.baWon?'rgba(0,200,150,0.06)':'rgba(255,100,80,0.05)') + ';margin-bottom:4px">' +
+          '<div style="font-size:11px;color:var(--text-dim);min-width:56px">' + m.type + '</div>' +
+          '<div style="flex:1;font-size:12px">' +
+            (m.partner ? '<span style="color:var(--text-dim)">w/ '+m.partner+'</span> ' : '') +
+            (m.opponents ? '<span style="color:var(--text-dim);font-size:11px">vs '+m.opponents+'</span>' : '') +
+          '</div>' +
+          (m.sets ? '<div style="font-size:11px;color:var(--text-dim);margin-right:8px">' + m.sets + '</div>' : '') +
+          '<div style="font-weight:700;color:' + lineColor + ';font-size:13px;min-width:16px;text-align:center">' + (m.baWon?'W':'L') + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    });
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════
