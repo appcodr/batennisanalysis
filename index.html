@@ -4710,27 +4710,45 @@ function renderMyScores() {
     'Practice Match History' +
   '</div>';
 
+  // Practice session data structure:
+  //   m.type   = 'singles' | 'doubles'
+  //   m.p1     = our player (singles) OR "PlayerA & PlayerB" (doubles, our team)
+  //   m.p2     = opponent (singles) OR "PlayerC & PlayerD" (doubles, their team)
+  //   m.result = 'win' | 'loss'  — always from OUR SIDE's perspective
   const practiceSessions = (appData.practiceSessions || []).slice().reverse(); // newest first
   const myPracticeMatches = [];
+  const pnl   = pname.toLowerCase();
+  const plast = pname.split(' ').pop().toLowerCase();
+
+  function nameMatchesPlayer(n) {
+    if (!n) return false;
+    const nl = n.trim().toLowerCase();
+    return nl === pnl || nl.split(' ').pop() === plast;
+  }
+
   practiceSessions.forEach(function(sess) {
     (sess.matches || []).forEach(function(m) {
-      const allPlayers = [m.p1, m.p2, m.p3, m.p4].filter(Boolean).map(function(n){ return n.trim().toLowerCase(); });
-      const pnl = pname.toLowerCase();
-      const plast = pname.split(' ').pop().toLowerCase();
-      const isInMatch = allPlayers.some(function(n){
-        return n === pnl || n.split(' ').pop() === plast;
-      });
-      if (!isInMatch) return;
+      // For singles: p1 = our player, p2 = their player
+      // For doubles: p1 = "A & B" (our team), p2 = "C & D" (opponents)
+      const p1Names = m.type === 'doubles'
+        ? (m.p1||'').split('&').map(function(n){ return n.trim(); }).filter(Boolean)
+        : [(m.p1||'').trim()].filter(Boolean);
+      const p2Names = m.type === 'doubles'
+        ? (m.p2||'').split('&').map(function(n){ return n.trim(); }).filter(Boolean)
+        : [(m.p2||'').trim()].filter(Boolean);
 
-      // Determine win/loss: p1+p2 vs p3+p4; winner field = 'team1' or 'team2'
-      const team1 = [m.p1, m.p2].filter(Boolean);
-      const team2 = [m.p3, m.p4].filter(Boolean);
-      const onTeam1 = team1.some(function(n){ const nl=n.trim().toLowerCase(); return nl===pnl||nl.split(' ').pop()===plast; });
-      const baWon = (onTeam1 && m.winner === 'team1') || (!onTeam1 && m.winner === 'team2');
-      const partner = (onTeam1 ? team1 : team2).filter(function(n){ const nl=n.trim().toLowerCase(); return nl!==pnl&&nl.split(' ').pop()!==plast; }).join(' & ');
-      const opponents = (onTeam1 ? team2 : team1).filter(Boolean).join(' / ');
+      const inP1 = p1Names.some(nameMatchesPlayer);
+      const inP2 = p2Names.some(nameMatchesPlayer);
+      if (!inP1 && !inP2) return; // player not in this match
+
+      // m.result = 'win'/'loss' from our (p1) side
+      const baWon = inP1 ? (m.result === 'win') : (m.result === 'loss');
+      const partnerNames = (inP1 ? p1Names : p2Names).filter(function(n){ return !nameMatchesPlayer(n); });
+      const opponentNames = inP1 ? p2Names : p1Names;
+      const partner   = partnerNames.join(' & ');
+      const opponents = opponentNames.filter(function(n){ return n && n !== '—'; }).join(' / ');
       const sets = m.score || '';
-      myPracticeMatches.push({ date: sess.date, baWon, partner, opponents, sets, type: team1.length+team2.length > 2 ? 'Doubles' : 'Singles' });
+      myPracticeMatches.push({ date: sess.date, baWon, partner, opponents, sets, type: m.type === 'doubles' ? 'Doubles' : 'Singles' });
     });
   });
 
